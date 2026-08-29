@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# This workflow only reads the repository.
+permissions:
+  contents: read
+
+# One run per ref; a newer push cancels an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -coverprofile cover.out
+
+      # The generated ClusterRole is the provider's real permission set, and a
+      # hand-edit to it silently disappears on the next regeneration — leaving a
+      # controller wedged on a denied informer while its pod still reports
+      # Ready. Fail the build if the committed manifests do not match the
+      # markers they are generated from.
+      - name: Verify generated manifests are current
+        run: |
+          make manifests generate
+          git diff --exit-code -- config internal
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.1.5
+
+  # Every overlay has to be deployable, so each is rendered on its own.
+  validate-kustomize:
+    uses: datum-cloud/actions/.github/workflows/validate-kustomize.yaml@v1.20.0

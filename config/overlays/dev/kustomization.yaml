@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kata-provider-system
+
+resources:
+  - ../../base/manager
+components:
+  - ../../components/controller_rbac
+  # A dev cluster generally installs Kata by hand rather than with kata-deploy,
+  # so the RuntimeClass has to come from somewhere.
+  - ../../components/kata_runtimeclass
+
+# Leader election is left off: the base runs a single replica, and a dev restart
+# should come back immediately rather than wait out a lease.
+patches:
+  - path: scheduling_patch.yaml

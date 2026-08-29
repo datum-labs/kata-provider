@@ -1,0 +1,15 @@
+apiVersion: apiserver.config.datumapis.com/v1alpha1
+kind: KataProvider
+metricsServer:
+  bindAddress: ":8080"
+webhookServer: {}
+downstreamResourceManagement:
+  # The Kubernetes RuntimeClass instance Pods run under. Which Kata hypervisor
+  # a site runs is a deployment decision, so an overlay that installs kata-clh
+  # (or a site-specific handler) patches this ConfigMap.
+  runtimeHandler: kata-qemu
+  # nodeSelector and tolerations are left unset: the provider then selects
+  # katacontainers.io/kata-runtime=true, the label kata-deploy applies to every
+  # node it has installed the runtime on, and adds no toleration. Set them in an
+  # overlay where the runtime is installed by other means, or where the
+  # Kata-capable nodes are tainted.

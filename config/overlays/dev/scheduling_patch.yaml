@@ -1,0 +1,15 @@
+# A dev cluster usually runs everything on one node, which carries the
+# control-plane taint. The provider does not care where instance Pods land as
+# long as the runtime is there, so the taint is tolerated rather than worked
+# around.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kata-provider
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule

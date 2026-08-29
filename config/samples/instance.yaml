@@ -1,0 +1,29 @@
+# An instance in the general-purpose runtime class: an ordinary Linux container
+# image, isolated in its own kernel. The same instance runs in the unikernel
+# class only if its image satisfies that class's compatibility contract; this
+# class is the one where any image runs.
+apiVersion: compute.datumapis.com/v1alpha
+kind: Instance
+metadata:
+  name: sample-general-purpose-instance
+  labels:
+    # Providers claim instances by this label. Compute stamps it from
+    # spec.runtime.class; it is shown here because a hand-applied sample has no
+    # controller to stamp it.
+    compute.datumapis.com/runtime-class: general-purpose
+spec:
+  runtime:
+    class: general-purpose
+    resources:
+      instanceType: datumcloud/d1-standard-2
+    sandbox:
+      containers:
+        - name: app
+          image: docker.io/library/nginx:latest
+          ports:
+            - name: http
+              port: 80
+  networkInterfaces:
+    - name: eth0
+      network:
+        name: default

@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kata-provider
+  labels:
+    control-plane: kata-provider
+    app.kubernetes.io/name: kata-provider
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      control-plane: kata-provider
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        control-plane: kata-provider
+        app.kubernetes.io/name: kata-provider
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: manager
+        command:
+        - /manager
+        args:
+          - --leader-elect=$(LEADER_ELECT)
+          - --health-probe-bind-address=$(HEALTH_PROBE_BIND_ADDRESS)
+          - --server-config=$(SERVER_CONFIG)
+        env:
+          - name: LEADER_ELECT
+            value: "false"
+          - name: HEALTH_PROBE_BIND_ADDRESS
+            value: ":8081"
+          - name: SERVER_CONFIG
+            value: /config/config.yaml
+        image: ghcr.io/datum-labs/kata-provider:latest
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - "ALL"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        volumeMounts:
+        - name: config
+          mountPath: /config
+      serviceAccountName: kata-provider
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: kata-provider-config

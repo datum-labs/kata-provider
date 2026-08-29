@@ -1,0 +1,37 @@
+name: build
+
+on:
+  push:
+  release:
+    types: ["published"]
+
+jobs:
+  validate-kustomize:
+    uses: datum-cloud/actions/.github/workflows/validate-kustomize.yaml@v1.20.0
+
+  publish-container-image:
+    needs:
+      - validate-kustomize
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+      attestations: write
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.20.0
+    with:
+      image-name: kata-provider
+      platforms: linux/amd64,linux/arm64
+    secrets: inherit
+
+  # Pin the image to the tag the job above published, then push the config tree
+  # as the bundle a cell deploys from.
+  publish-kustomize-bundle:
+    needs:
+      - publish-container-image
+    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.20.0
+    with:
+      bundle-name: ghcr.io/datum-labs/kata-provider-kustomize
+      bundle-path: config
+      images: |
+        - { path: config/base/manager, name: ghcr.io/datum-labs/kata-provider, tag: "${{ needs.publish-container-image.outputs.tag }}" }
+    secrets: inherit

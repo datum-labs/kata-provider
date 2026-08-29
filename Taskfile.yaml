@@ -1,0 +1,30 @@
+version: '3'
+
+vars:
+  IMG_NAME: 'ghcr.io/datum-labs/kata-provider'
+  IMG_TAG: 'dev'
+  IMG: '{{.IMG_NAME}}:{{.IMG_TAG}}'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build the kata-provider container image
+    silent: true
+    cmds:
+      - docker build -t {{.IMG}} .
+
+  test:
+    desc: Run the unit tests
+    silent: true
+    cmds:
+      - go test ./...
+
+  deploy:dev:
+    desc: Deploy the provider into the cluster in the current kubecontext
+    silent: true
+    cmds:
+      - make deploy IMG={{.IMG}}

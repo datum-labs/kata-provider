@@ -1,0 +1,15 @@
+# The provider is a cell control component: it belongs on the control-plane
+# nodes, not on the nodes running tenant instances.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kata-provider
+spec:
+  template:
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule

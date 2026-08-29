@@ -1,0 +1,17 @@
+# The Kubernetes RuntimeClass that points the kubelet at the Kata handler. It is
+# not Datum's runtime class: this is the node-level runtime binding that a
+# general-purpose instance's Pod names, and it must exist in the cluster before
+# any such Pod can be admitted.
+#
+# The handler name must match the provider's runtimeHandler setting.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata-qemu
+  labels:
+    app.kubernetes.io/name: kata-provider
+    app.kubernetes.io/managed-by: kustomize
+handler: kata-qemu
+scheduling:
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"
