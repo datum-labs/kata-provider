@@ -4,7 +4,16 @@ resources:
   - leader_election_role.yaml
   - leader_election_role_binding.yaml
 patches:
-  - patch: |-
+  # An explicit target, rather than letting kustomize resolve one from the
+  # patch body: a Component is composed into an overlay and is not buildable on
+  # its own, so a body-resolved patch makes `kustomize build` of this directory
+  # fail with "no resource matches strategic merge patch". With a target the
+  # patch simply matches nothing when nothing is there, and the component stays
+  # independently renderable for validation.
+  - target:
+      kind: Deployment
+      name: kata-provider
+    patch: |-
       apiVersion: apps/v1
       kind: Deployment
       metadata:

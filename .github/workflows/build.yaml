@@ -21,6 +21,10 @@ jobs:
     with:
       image-name: kata-provider
       platforms: linux/amd64,linux/arm64
+      # The shared workflow defaults this to datum-cloud, which would publish
+      # the image to a different organization than the one this repository and
+      # its kustomize bundle live in.
+      registry-organization: datum-labs
     secrets: inherit
 
   # Pin the image to the tag the job above published, then push the config tree
@@ -28,6 +32,15 @@ jobs:
   publish-kustomize-bundle:
     needs:
       - publish-container-image
+    # A called workflow cannot hold a permission its caller was not granted,
+    # and this one's job asks for all three to push the bundle to ghcr. Without
+    # them the request exceeds the repository's default read-only token and
+    # GitHub fails the whole workflow before any job starts, which surfaces as
+    # a zero-second startup_failure with no log to read.
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
     uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.20.0
     with:
       bundle-name: ghcr.io/datum-labs/kata-provider-kustomize

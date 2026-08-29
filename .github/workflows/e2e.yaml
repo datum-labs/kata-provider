@@ -34,11 +34,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # /usr/local/bin is not writable by the runner user, so placing a binary
+      # there needs sudo. Every other tool a run needs is either preinstalled on
+      # the runner (docker, kubectl, helm, jq) or installed into the
+      # repository's own bin/ by the Makefile and Taskfile.
       - name: Install kind
         run: |
-          curl -sSfLo /usr/local/bin/kind \
+          curl -sSfLo /tmp/kind \
             "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
-          chmod +x /usr/local/bin/kind
+          chmod +x /tmp/kind
+          sudo mv /tmp/kind /usr/local/bin/kind
+          kind version
 
       - uses: arduino/setup-task@v2
         with:
@@ -96,9 +102,11 @@ jobs:
       - name: Install kind
         if: steps.kvm.outputs.available == 'true'
         run: |
-          curl -sSfLo /usr/local/bin/kind \
+          curl -sSfLo /tmp/kind \
             "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
-          chmod +x /usr/local/bin/kind
+          chmod +x /tmp/kind
+          sudo mv /tmp/kind /usr/local/bin/kind
+          kind version
 
       - uses: arduino/setup-task@v2
         if: steps.kvm.outputs.available == 'true'
