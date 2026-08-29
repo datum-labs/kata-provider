@@ -1,0 +1,33 @@
+# Reads the Kata runtime configuration off the node that will run the control.
+#
+# It is an ordinary container, not an instance: it needs to see the host's copy
+# of the configuration, which is the thing the runtime will actually consult,
+# rather than a guest's view of anything.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: runtime-config-probe
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  containers:
+    - name: probe
+      image: docker.io/library/busybox:1.36
+      command:
+        - sh
+        - -c
+        - grep '^enable_annotations' /kata-config/configuration-qemu.toml
+      volumeMounts:
+        - name: kata-config
+          mountPath: /kata-config
+          readOnly: true
+  volumes:
+    - name: kata-config
+      hostPath:
+        path: /opt/kata/share/defaults/kata-containers
+        type: Directory

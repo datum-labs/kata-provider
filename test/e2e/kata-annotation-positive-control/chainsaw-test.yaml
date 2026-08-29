@@ -29,9 +29,58 @@ spec:
 
     The pair is the assertion. Either half alone proves nothing.
 
+    And the pair itself has a precondition. The control only demonstrates
+    anything while the runtime still honours the annotation, which it does
+    because kernel_params is in Kata's default enable_annotations allow-list. If
+    a future release narrows that default, the control stops reaching the guest,
+    the tenant's marker is absent for a reason that has nothing to do with this
+    provider, and a suite that only looked for absence would report a pass while
+    proving nothing at all. So the allow-list is asserted first, by name, and a
+    change to it fails this suite loudly instead of quietly hollowing it out.
+
   template: true
 
   steps:
+    - name: assert-the-runtime-still-honours-the-annotation
+      description: |
+        The node's runtime configuration still allows the annotation the control
+        depends on. Checked before anything boots, so the cheap failure happens
+        first and names its own cause.
+      try:
+        - apply:
+            file: runtime-config-probe.yaml
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: runtime-config-probe
+              status:
+                phase: Succeeded
+        - script:
+            content: |
+              allowlist=$(kubectl -n "$NAMESPACE" logs runtime-config-probe)
+              case "$allowlist" in
+                *kernel_params*)
+                  echo "runtime allow-list still honours kernel_params: $allowlist"
+                  ;;
+                *)
+                  echo "PRECONDITION FAILED — this suite can no longer prove anything." >&2
+                  echo "" >&2
+                  echo "The runtime no longer accepts the kernel_params annotation:" >&2
+                  echo "  $allowlist" >&2
+                  echo "" >&2
+                  echo "The control below depends on that annotation reaching the guest." >&2
+                  echo "Without it the tenant's marker would be absent because the runtime" >&2
+                  echo "ignored it, not because the provider stripped it — so the security" >&2
+                  echo "assertion would invert into a tautology and still report a pass." >&2
+                  echo "" >&2
+                  echo "Fix the control — find an annotation the runtime does honour and" >&2
+                  echo "use that — rather than deleting this check." >&2
+                  exit 1
+                  ;;
+              esac
+
     - name: create-both
       description: |
         The tenant's instance and the directly-created control, together, so
@@ -60,8 +109,15 @@ spec:
 
     - name: assert-the-channel-is-live
       description: |
-        The control's marker reached the guest kernel command line. If this
-        fails, the negative assertion below means nothing and the suite says so
+        The control's marker reached the guest kernel command line.
+
+        This step is what stops the suite going green for the wrong reason. The
+        assertion below is a negative — a marker that is absent — and a negative
+        passes just as happily against a runtime that ignored the annotation as
+        against a provider that stripped it. The likeliest way that happens is a
+        future Kata release narrowing its default enable_annotations, which
+        would silently turn the whole suite into a tautology. So the channel is
+        demonstrated live first, and if it is not, the suite fails and says why
         rather than reporting a pass.
       try:
         - script:
@@ -72,8 +128,12 @@ spec:
                   echo "control annotation reached the guest command line"
                   ;;
                 *)
-                  echo "the annotation did NOT reach the guest even without the provider in the way;" >&2
-                  echo "this node cannot demonstrate the defense, so the result below is meaningless" >&2
+                  echo "the annotation did NOT reach the guest even without the provider in the way." >&2
+                  echo "This node cannot demonstrate the defense, so the assertion that follows" >&2
+                  echo "would prove nothing and the suite fails here instead." >&2
+                  echo "Most likely cause: kernel_params is no longer in this runtime's" >&2
+                  echo "enable_annotations allow-list. Check it on the node with:" >&2
+                  echo "  grep enable_annotations /opt/kata/share/defaults/kata-containers/configuration-qemu.toml" >&2
                   echo "guest command line: $cmdline" >&2
                   exit 1
                   ;;
