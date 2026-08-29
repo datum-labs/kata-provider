@@ -46,6 +46,22 @@ kata)
 		--values "${REPO_ROOT}/hack/e2e/kata-values.yaml" \
 		--wait --timeout 10m >/dev/null
 
+	# On a cluster that has just been created the DaemonSet exists before any of
+	# its Pods do, and neither readiness check means anything in that window: a
+	# DaemonSet with nothing scheduled yet is trivially "successfully rolled
+	# out", and `kubectl wait -l` does not wait for a Pod to appear — it fails
+	# outright with "no matching resources found". Waiting for the DaemonSet to
+	# want a Pod first is what makes both checks real. Reusing a cluster hides
+	# this entirely, because the Pod is already there.
+	for _ in $(seq 60); do
+		desired="$(kctl -n kube-system get daemonset kata-deploy \
+			-o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || true)"
+		if [[ -n "${desired}" && "${desired}" -gt 0 ]]; then
+			break
+		fi
+		sleep 2
+	done
+
 	# kata-deploy reports ready before it has finished writing the runtime onto
 	# the node, and the node fixes below edit files it installs.
 	kctl -n kube-system rollout status daemonset/kata-deploy --timeout=10m
