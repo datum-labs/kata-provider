@@ -62,13 +62,16 @@ jobs:
 
   # The Kata tier, non-blocking.
   #
-  # GitHub's standard Linux runners do expose /dev/kvm — it is what makes the
-  # hardware-accelerated Android emulator work on them — but it is not a
-  # documented, supported guarantee, and this job has never been observed to
-  # complete on a runner: the tier is developed and run locally, on a VM with
-  # nested virtualization. So it reports rather than gates, and it checks for
-  # the device instead of assuming it, so a runner without one says so plainly
-  # rather than failing somewhere deep inside a guest boot.
+  # This does run here: GitHub's standard Linux runners expose /dev/kvm — it is
+  # what makes their hardware-accelerated Android emulator work — and the whole
+  # tier has been observed passing on one, booting real guests with their own
+  # kernel.
+  #
+  # It still reports rather than gates, because KVM on a hosted runner is not a
+  # documented, supported guarantee and can be withdrawn without notice. Gating
+  # the branch on it would mean a change in GitHub's fleet blocking every merge.
+  # So the device is checked for rather than assumed, and a runner without one
+  # says so plainly instead of failing somewhere deep inside a guest boot.
   kata:
     name: isolation suites (kata, non-blocking)
     runs-on: ubuntu-latest

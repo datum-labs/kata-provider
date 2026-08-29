@@ -99,7 +99,7 @@ them.
 | --- | --- | --- |
 | What executes an instance | A `RuntimeClass` named as the provider expects, handled by runc | Real Kata Containers |
 | Needs hardware virtualization | No | Yes |
-| Runs in CI | Yes — this is the gate | Non-blocking |
+| Runs in CI | Yes — this is the gate | Yes, but non-blocking |
 | Proves | Everything the provider decides | The above, plus isolation |
 
 The portable tier is not a weaker version of the same test. Which instances the
@@ -142,6 +142,10 @@ colima start kata --vm-type vz --nested-virtualization \
 The e2e scripts find that profile's socket themselves and pass it through the
 environment, so they change neither your `docker context` nor your
 `~/.kube/config`.
+
+CI runs this tier too, on the KVM that GitHub's standard Linux runners expose.
+It is kept non-blocking anyway: that KVM is not a documented guarantee, and a
+change in GitHub's fleet should not be able to block every merge.
 
 Two things about that environment are worth knowing, because both are fatal and
 neither reports itself clearly. Kata's arm64 defaults ask QEMU for a performance
