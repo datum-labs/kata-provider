@@ -1,0 +1,106 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: suspend-resume
+  labels:
+    tier: portable
+spec:
+  description: |
+    Proves that suspending an instance stops it without giving it up, and that
+    resuming it brings it back.
+
+    Suspension is the platform's non-destructive pause: a customer stopping a
+    service they intend to restart, or the platform pausing an account without
+    destroying what is in it. The distinction that matters is between stopping
+    the process and releasing the instance. Only the process stops. The Instance
+    stays, the provider keeps its claim on it, and everything the platform is
+    holding on the customer's behalf is still theirs to come back to.
+
+    Status is deliberately not asserted while suspended. Compute owns the Ready
+    and Available conditions of a suspended instance and writes the suspension
+    reason itself; a provider writing them there would only fight it.
+
+  template: true
+
+  steps:
+    - name: create-instance
+      description: A running instance to suspend.
+      try:
+        - apply:
+            file: instance.yaml
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: suspendable
+              status:
+                phase: Running
+
+    - name: suspend
+      description: |
+        Compute reports the instance suspended. In production this arrives from
+        the WorkloadDeployment; here it is written straight onto the status the
+        provider reads, because no compute controller runs in this environment
+        and faking one would test the fake.
+      try:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" patch instance suspendable \
+                --subresource=status --type=merge \
+                -p '{"status":{"suspended":true}}'
+
+    - name: assert-stopped-but-not-released
+      description: |
+        The instance's process is gone, and the instance itself is not. The
+        finalizer is still held, so the provider still considers this instance
+        its own and will tear it down properly when the customer does delete it.
+      try:
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: suspendable
+        - assert:
+            resource:
+              apiVersion: compute.datumapis.com/v1alpha
+              kind: Instance
+              metadata:
+                name: suspendable
+                finalizers:
+                  - kata.datumapis.com/finalizer
+              status:
+                suspended: true
+
+    - name: resume
+      description: The customer resumes the instance.
+      try:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" patch instance suspendable \
+                --subresource=status --type=merge \
+                -p '{"status":{"suspended":false}}'
+
+    - name: assert-running-again
+      description: |
+        It comes back with no intervention, and reports available to the
+        customer again.
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: suspendable
+              status:
+                phase: Running
+        - assert:
+            resource:
+              apiVersion: compute.datumapis.com/v1alpha
+              kind: Instance
+              metadata:
+                name: suspendable
+              status:
+                (conditions[?type == 'Available'] | [0].status): "True"
+                (conditions[?type == 'Programmed'] | [0].status): "True"

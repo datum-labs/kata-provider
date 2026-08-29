@@ -1,0 +1,69 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: virtual-machine-not-served
+  labels:
+    tier: portable
+spec:
+  description: |
+    Proves that an instance shaped as something this class does not serve is
+    left alone rather than realized as something else.
+
+    The general-purpose class runs containers inside a platform-owned guest. It
+    does not boot a customer's own OS image, and it says so in its declared
+    capabilities, so compute rejects a virtual machine instance at apply time
+    with the class named. An instance that reaches a cell in that shape predates
+    that validation.
+
+    The right outcome is nothing: no backing instance, and no finalizer. Running
+    it as a container sandbox would silently give the customer a different
+    product from the one they asked for, on the same bill.
+
+  template: true
+
+  steps:
+    - name: create-virtual-machine-instance
+      description: Create an instance in a shape the class does not serve, alongside one it does.
+      try:
+        - apply:
+            file: instance.yaml
+
+    - name: assert-provider-is-live
+      description: |
+        The companion instance is running, so the provider is up and has
+        processed this namespace. Every "nothing happened" assertion below rests
+        on this.
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: canary
+              status:
+                phase: Running
+
+    - name: assert-not-realized
+      description: Nothing is started for it.
+      try:
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: virtual-machine
+
+    - name: assert-not-held
+      description: |
+        And it is not held. The provider never claimed it, so it must not stand
+        between the customer and deleting it.
+      try:
+        - script:
+            content: |
+              held=$(kubectl -n "$NAMESPACE" get instance virtual-machine \
+                -o jsonpath='{.metadata.finalizers}')
+              if [ -n "$held" ]; then
+                echo "provider holds finalizers on an instance it does not serve: $held" >&2
+                exit 1
+              fi
+              echo "virtual machine instance is unrealized and unheld"

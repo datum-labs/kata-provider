@@ -1,0 +1,153 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: tenant-annotation-isolation
+  labels:
+    tier: portable
+spec:
+  description: |
+    Proves that nothing a customer writes on their instance becomes runtime
+    configuration for the hypervisor that isolates it.
+
+    This is the security property the class rests on. Kata acts on
+    io.katacontainers.* annotations as host root, and every escape reported
+    against it in 2026 — including a guest-to-host escape scoring 9.6 — reduces
+    to the same bug: a value a tenant could write reached that configuration.
+    The provider's defense is structural rather than a matter of sanitizing
+    values. It builds the backing instance from its own allow-list, copies no
+    metadata from the Instance, and removes any io.katacontainers.* key it did
+    not put there.
+
+    Three things are asserted:
+
+      1. None of the tenant's runtime annotations reached the instance, for the
+         hypervisor binary, the guest kernel command line, IOMMU passthrough,
+         guest seccomp, or the OCI bundle path.
+      2. Neither did the harmless one. Instance metadata is not a filtered
+         source for instance-Pod metadata, it is not a source at all — a prefix
+         filter over tenant input is precisely what the CVEs got wrong, and a
+         test that allowed benign passthrough would license adding one.
+      3. A key written directly onto the backing instance afterwards — by an
+         operator, a mutating admission webhook, anything with access to the
+         cell — is removed on the next reconcile rather than preserved.
+
+    The portable tier proves the annotations are absent. Whether their presence
+    would have done anything is proven separately by the tier=kata positive
+    control, which is what makes this assertion more than a string comparison.
+
+  template: true
+
+  steps:
+    - name: create-instance
+      description: Create an instance whose metadata carries hostile runtime configuration.
+      try:
+        - apply:
+            file: instance.yaml
+
+    - name: assert-instance-runs
+      description: |
+        The instance still runs. The provider drops the annotations, it does not
+        reject the customer's instance over metadata they may not have written
+        deliberately.
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: hostile-metadata
+              status:
+                phase: Running
+
+    - name: assert-no-tenant-annotation-reached-the-runtime
+      description: |
+        Not one of the tenant's keys is on the backing instance — asserted key
+        by key, so a partial filter that let a single one through fails here
+        with that key named.
+      try:
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: hostile-metadata
+                annotations:
+                  io.katacontainers.config.hypervisor.kernel_params: "init=/bin/sh"
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: hostile-metadata
+                annotations:
+                  io.katacontainers.config.hypervisor.path: "/bin/false"
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: hostile-metadata
+                annotations:
+                  io.katacontainers.config.hypervisor.enable_iommu: "true"
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: hostile-metadata
+                annotations:
+                  io.katacontainers.config.runtime.disable_guest_seccomp: "true"
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: hostile-metadata
+                annotations:
+                  io.katacontainers.pkg.oci.bundle_path: "/tmp/escape"
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: hostile-metadata
+                annotations:
+                  example.com/harmless: "not-runtime-configuration"
+
+    - name: assert-no-runtime-key-survives-at-all
+      description: |
+        The stronger form of the same claim: the backing instance carries no key
+        under the Kata namespace whatsoever, whatever its value. This is what
+        catches a future change that copies a tenant key with a rewritten value
+        instead of dropping it.
+      try:
+        - script:
+            content: |
+              smuggled=$(kubectl -n "$NAMESPACE" get pod hostile-metadata -o json |
+                jq -r '(.metadata.annotations // {}) | keys[] | select(startswith("io.katacontainers."))')
+              if [ -n "$smuggled" ]; then
+                echo "runtime configuration reached the instance:" >&2
+                echo "$smuggled" >&2
+                exit 1
+              fi
+              echo "no io.katacontainers.* key on the instance"
+
+    - name: assert-late-injection-is-reverted
+      description: |
+        The allow-list is enforced on every reconcile, not only at creation.
+        Something with access to the cell writes a runtime annotation straight
+        onto the backing instance; the provider must take it back off rather
+        than preserve what it finds.
+      try:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" annotate pod hostile-metadata \
+                io.katacontainers.config.hypervisor.kernel_params="init=/bin/sh" --overwrite
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: hostile-metadata
+                annotations:
+                  io.katacontainers.config.hypervisor.kernel_params: "init=/bin/sh"

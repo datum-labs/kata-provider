@@ -1,0 +1,57 @@
+# A virtual machine instance: a customer-supplied OS image booted directly,
+# rather than containers run inside a platform-owned guest.
+#
+# The class does not declare that capability, so compute refuses it at apply
+# time. This one is applied straight to the cell, with no compute webhook in
+# front of it, which is the shape an instance created before that validation
+# existed would have.
+apiVersion: compute.datumapis.com/v1alpha
+kind: Instance
+metadata:
+  name: virtual-machine
+  labels:
+    compute.datumapis.com/runtime-class: general-purpose
+spec:
+  runtime:
+    class: general-purpose
+    resources:
+      instanceType: datumcloud/d1-standard-2
+    virtualMachine:
+      volumeAttachments:
+        - name: boot
+          mountPath: /
+  volumes:
+    - name: boot
+      configMap:
+        name: boot-image
+  networkInterfaces:
+    - name: eth0
+      network:
+        name: default
+---
+# A companion instance the provider does serve, in the same namespace.
+#
+# The assertions below are about something NOT happening, and absence proves
+# nothing unless the provider was live and had reached this namespace. This
+# instance running is what makes that true; without it the suite would pass just
+# as happily against a provider that had crashed on startup.
+apiVersion: compute.datumapis.com/v1alpha
+kind: Instance
+metadata:
+  name: canary
+  labels:
+    compute.datumapis.com/runtime-class: general-purpose
+spec:
+  runtime:
+    class: general-purpose
+    resources:
+      instanceType: datumcloud/d1-standard-2
+    sandbox:
+      containers:
+        - name: app
+          image: docker.io/library/busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+  networkInterfaces:
+    - name: eth0
+      network:
+        name: default

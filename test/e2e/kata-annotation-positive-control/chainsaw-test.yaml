@@ -1,0 +1,99 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: kata-annotation-positive-control
+  labels:
+    tier: kata
+spec:
+  description: |
+    Proves that the annotation the provider strips is one that would otherwise
+    have worked.
+
+    The portable tier already asserts that a tenant's io.katacontainers.*
+    annotations never reach the backing instance. On its own that is a weak
+    result: a test that only ever checks for absence passes just as happily
+    against a runtime that ignores the annotation entirely, and would keep
+    passing if the defense were removed on a node where nothing acts on it.
+
+    So this suite runs both halves side by side on the same node, with the same
+    annotation key:
+
+      - A Pod created directly against the cell carries the annotation into the
+        guest: its marker appears on the guest kernel command line. Kata ships
+        kernel_params in its default enable_annotations allow-list, so this is
+        not a contrived configuration — it is the channel as an operator would
+        find it.
+      - An instance whose customer asked for the same thing through Instance
+        metadata does not. The provider removed it, so the marker is absent
+        from a guest that demonstrably would have accepted it.
+
+    The pair is the assertion. Either half alone proves nothing.
+
+  template: true
+
+  steps:
+    - name: create-both
+      description: |
+        The tenant's instance and the directly-created control, together, so
+        they run on the same node under the same runtime configuration.
+      try:
+        - apply:
+            file: instance.yaml
+        - apply:
+            file: positive-control.yaml
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: tenant-request
+              status:
+                phase: Running
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: annotation-control
+              status:
+                phase: Running
+
+    - name: assert-the-channel-is-live
+      description: |
+        The control's marker reached the guest kernel command line. If this
+        fails, the negative assertion below means nothing and the suite says so
+        rather than reporting a pass.
+      try:
+        - script:
+            content: |
+              cmdline=$(kubectl exec -n "$NAMESPACE" annotation-control -- cat /proc/cmdline)
+              case "$cmdline" in
+                *kata_e2e_control_marker=1*)
+                  echo "control annotation reached the guest command line"
+                  ;;
+                *)
+                  echo "the annotation did NOT reach the guest even without the provider in the way;" >&2
+                  echo "this node cannot demonstrate the defense, so the result below is meaningless" >&2
+                  echo "guest command line: $cmdline" >&2
+                  exit 1
+                  ;;
+              esac
+
+    - name: assert-the-tenant-is-off-the-channel
+      description: |
+        The tenant's marker is not on their guest's command line, on the same
+        node where the control's marker is on its own.
+      try:
+        - script:
+            content: |
+              cmdline=$(kubectl exec -n "$NAMESPACE" tenant-request -- cat /proc/cmdline)
+              case "$cmdline" in
+                *kata_e2e_tenant_marker=1*)
+                  echo "a tenant-supplied value reached the hypervisor configuration" >&2
+                  echo "guest command line: $cmdline" >&2
+                  exit 1
+                  ;;
+                *)
+                  echo "tenant annotation did not reach the guest command line"
+                  ;;
+              esac

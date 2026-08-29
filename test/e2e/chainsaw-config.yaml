@@ -1,0 +1,31 @@
+# Chainsaw configuration for the kata-provider end-to-end suites.
+#
+# Two tiers run these suites, selected by label rather than by duplicating them:
+#
+#   task e2e TIER=runc    every suite labelled tier=portable, against a
+#                         RuntimeClass handled by runc. No hardware
+#                         virtualization, so it runs anywhere — this is the CI
+#                         gate.
+#
+#   task e2e TIER=kata    every suite, against real Kata Containers. The
+#                         portable suites run unchanged and the tier=kata ones
+#                         add what only means something behind a hypervisor.
+#
+# Prerequisites: `task e2e:up` builds the cluster and `task e2e:deploy` puts the
+# provider in it. Both are create-or-reuse, so the normal loop re-runs them.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Configuration
+metadata:
+  name: chainsaw
+spec:
+  # Widened from chainsaw's defaults for the Kata tier: an instance there boots
+  # a guest kernel and a UEFI firmware before its container starts, which takes
+  # roughly twenty seconds steady-state and considerably longer on the run that
+  # first pulls the image. The runc tier finishes well inside these.
+  timeouts:
+    apply: 60s
+    assert: 180s
+    cleanup: 120s
+    delete: 120s
+    error: 60s
+    exec: 60s

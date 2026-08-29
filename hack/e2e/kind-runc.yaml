@@ -1,0 +1,11 @@
+# The portable tier's cluster: an ordinary single-node Kind cluster.
+#
+# Nothing is passed in from the host. The tier deliberately does not run a
+# hypervisor, so this cluster is creatable on any machine and on a GitHub
+# runner, and the suites it hosts are the ones that assert on what the provider
+# itself decides.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: kata-provider-runc
+nodes:
+  - role: control-plane

@@ -1,0 +1,36 @@
+# Helm values for kata-deploy.
+#
+# Kata 4.x is installed by Helm only; the kata-deploy.yaml manifests earlier
+# instructions point at no longer exist in the repository.
+k8sDistribution: "k8s"
+
+# A single-node Kind cluster has only the control-plane node, so the runtime has
+# to be installed there.
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+# Only the QEMU shim is installed: it is the handler the provider targets by
+# default, and every extra shim is another guest image and kernel to pull onto
+# the node for nothing.
+shims:
+  disableAll: true
+  qemu:
+    enabled: true
+
+# kata-deploy creates the RuntimeClass objects itself, which is why the
+# provider's kata_runtimeclass component stays off in this environment.
+runtimeClasses:
+  enabled: true
+
+# Kata 4.0 made runtime-rs the default shim on arm64. The provider targets the
+# Go `qemu` shim, so it is named explicitly rather than left to the default,
+# which otherwise differs by architecture.
+defaultShim:
+  arm64: qemu
+  amd64: qemu
+
+debug: true

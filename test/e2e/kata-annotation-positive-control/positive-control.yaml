@@ -1,0 +1,25 @@
+# The control: the same annotation, on a Pod created directly against the cell
+# rather than through an Instance.
+#
+# Nothing about this Pod goes through the provider, so nothing strips the
+# annotation, and Kata acts on it. It exists to demonstrate that the annotation
+# is a live channel into the hypervisor on this node — which is the only thing
+# that makes the negative result next to it meaningful.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: annotation-control
+  annotations:
+    io.katacontainers.config.hypervisor.kernel_params: "kata_e2e_control_marker=1"
+spec:
+  runtimeClassName: kata-qemu
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  containers:
+    - name: app
+      image: docker.io/library/busybox:1.36
+      command: ["sh", "-c", "sleep 3600"]
