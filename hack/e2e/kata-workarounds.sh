@@ -7,6 +7,9 @@
 # kata-deploy reinstalls its configuration, and the second on every node
 # restart. This script therefore reapplies both, idempotently, every time the
 # environment comes up, rather than an operator applying them once by hand.
+#
+# The first fix belongs to QEMU alone, so a node running only the Cloud
+# Hypervisor shim has no configuration to patch and the script skips it.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -30,22 +33,23 @@ docker exec "${NODE}" sh -c '
   # copy.
   configs=$(find /opt/kata/share/defaults/kata-containers -name "configuration-qemu.toml" -type f)
   if [ -z "${configs}" ]; then
-    echo "Kata configuration not present yet on the node" >&2
-    exit 1
+    exit 0
   fi
   for config in ${configs}; do
     sed -i "s/^cpu_features = .*/cpu_features = \"\"/" "${config}"
     grep -q "^cpu_features = \"\"" "${config}"
   done
 '
-log "  cpu_features cleared in every configuration-qemu.toml on the node"
+log "  cpu_features cleared in every configuration-qemu.toml on the node, if any"
 
 # ── 2. /dev/shm is 64 MB inside a container ────────────────────────────────
 #
-# Kata backs the guest's RAM with memory-backend-file on /dev/shm. A container's
-# default 64 MB of shared memory cannot hold a guest. QEMU then fails the boot
-# with "kvm run failed Bad address", which reads like a fault in KVM, the Linux
-# Kernel-based Virtual Machine interface, rather than a sizing problem. The node
+# Kata backs the guest's RAM with a file on /dev/shm, under either hypervisor,
+# so that virtio-fs can share it. A container's
+# default 64 MB of shared memory cannot hold a guest. The hypervisor then fails
+# the boot with "kvm run failed Bad address", which reads like a fault in KVM,
+# the Linux Kernel-based Virtual Machine interface, rather than a sizing
+# problem. The node
 # needs room for every guest that the suites run concurrently, at the instance
 # type's 2 GiB each.
 docker exec "${NODE}" sh -c 'mount -o remount,size=8G /dev/shm'

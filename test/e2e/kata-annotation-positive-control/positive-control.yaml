@@ -12,7 +12,7 @@ metadata:
   annotations:
     io.katacontainers.config.hypervisor.kernel_params: "kata_e2e_control_marker=1"
 spec:
-  runtimeClassName: kata-qemu
+  runtimeClassName: ($values.runtimeClass)
   nodeSelector:
     katacontainers.io/kata-runtime: "true"
   tolerations:

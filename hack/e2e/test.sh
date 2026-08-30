@@ -30,12 +30,15 @@ else
 	PARALLEL="${E2E_PARALLEL:-1}"
 fi
 
-log "running tier=${E2E_TIER} suites (parallel ${PARALLEL})"
+log "running tier=${E2E_TIER} suites against ${E2E_RUNTIME_CLASS} (parallel ${PARALLEL})"
 
 cd "${REPO_ROOT}"
+# The RuntimeClass name follows the hypervisor the tier installed, so the suites
+# take it as a value rather than fixing one name in every manifest.
 KUBECONFIG="${E2E_KUBECONFIG}" "${CHAINSAW}" test \
 	--config test/e2e/chainsaw-config.yaml \
 	--parallel "${PARALLEL}" \
+	--set "runtimeClass=${E2E_RUNTIME_CLASS}" \
 	${SELECTOR[@]+"${SELECTOR[@]}"} \
 	"$@" \
 	test/e2e/

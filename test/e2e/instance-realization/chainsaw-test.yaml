@@ -67,7 +67,7 @@ spec:
                     controller: true
                     blockOwnerDeletion: true
               spec:
-                runtimeClassName: kata-qemu
+                runtimeClassName: ($values.runtimeClass)
                 nodeSelector:
                   katacontainers.io/kata-runtime: "true"
                 automountServiceAccountToken: false

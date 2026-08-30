@@ -1,7 +1,8 @@
 # The portable tier's RuntimeClass.
 #
 # The object carries the name that the provider puts on every instance Pod, but
-# it resolves to runc. That substitution is what the tier rests on. The
+# it resolves to runc. up.sh substitutes the name, because the provider names
+# its RuntimeClass after the hypervisor the deployment chose. That substitution is what the tier rests on. The
 # provider's decisions stay identical whether the kubelet hands the Pod to Kata
 # or to runc: which instances it claims, the Pod it builds, the RuntimeClass it
 # names, where it schedules, and what it reports. A machine with no hardware
@@ -14,7 +15,7 @@
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:
-  name: kata-qemu
+  name: "@RUNTIME_CLASS@"
 handler: runc
 scheduling:
   nodeSelector:

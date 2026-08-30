@@ -143,6 +143,19 @@ The e2e scripts find that profile's socket themselves and pass it through the
 environment, so they change neither your `docker context` nor your
 `~/.kube/config`.
 
+The tier installs Cloud Hypervisor, the hypervisor the provider targets by
+default, and the suites assert that instances name its RuntimeClass. Kata 4.x
+builds the Cloud Hypervisor shim for x86_64 only, so an arm64 host — an Apple
+silicon Mac, for example — runs the tier under QEMU instead:
+
+```bash
+task e2e TIER=kata E2E_KATA_SHIM=qemu
+```
+
+That variable picks the shim `kata-deploy` installs, the RuntimeClass name the
+suites assert on, and the handler the provider is configured with, together. It
+is the same override an arm64 cell makes in the provider's configuration.
+
 CI runs this tier too, on the KVM that GitHub's standard Linux runners expose.
 It is kept non-blocking anyway: that KVM is not a documented guarantee, and a
 change in GitHub's fleet should not be able to block every merge.
@@ -154,4 +167,5 @@ container's 64 MB `/dev/shm` is too small to back a guest's RAM — the first
 fails with a missing QEMU property, the second with what looks like a KVM fault.
 Both are reapplied to the node on every `task e2e:up`, in
 `hack/e2e/kata-workarounds.sh`, because both are lost whenever the thing that
-owns them is rebuilt.
+owns them is rebuilt. The first applies to QEMU alone, so it is skipped where
+the node runs Cloud Hypervisor.

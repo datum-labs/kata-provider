@@ -14,24 +14,19 @@ tolerations:
     operator: Exists
     effect: NoSchedule
 
-# Install only the QEMU shim. QEMU is the handler that the provider targets by
-# default, and every extra shim pulls another guest image and kernel onto the
-# node for no benefit.
+# Install one shim only. Every extra shim pulls another guest image and kernel
+# onto the node for no benefit. Which one is installed comes from up.sh, which
+# passes the shim named by E2E_KATA_SHIM on the command line, so the tier
+# installs the same hypervisor the provider targets.
 shims:
   disableAll: true
-  qemu:
-    enabled: true
 
 # kata-deploy creates the RuntimeClass objects itself. The provider's
 # kata_runtimeclass component therefore stays off in this environment.
 runtimeClasses:
   enabled: true
 
-# Kata 4.0 made runtime-rs the default shim on arm64. The provider targets the
-# Go `qemu` shim, so these values name that shim explicitly. The default
-# otherwise differs by architecture.
-defaultShim:
-  arm64: qemu
-  amd64: qemu
+# Kata 4.0 made runtime-rs the default shim on every architecture. The provider
+# targets a Go shim, so up.sh names the selected shim explicitly here too.
 
 debug: true

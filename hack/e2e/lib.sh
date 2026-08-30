@@ -52,11 +52,20 @@ E2E_IMAGE="${E2E_IMAGE:-ghcr.io/datum-labs/kata-provider:e2e}"
 
 E2E_NAMESPACE="${E2E_NAMESPACE:-kata-provider-system}"
 
-# The Kubernetes RuntimeClass that instance Pods name. Both tiers use the same
-# name deliberately. The provider's configuration stays the same whichever
-# runtime sits behind the name, and so does every assertion about the Pod the
-# provider builds. Only the handler that the object resolves to changes.
-E2E_RUNTIME_CLASS="${E2E_RUNTIME_CLASS:-kata-qemu}"
+# Which Kata hypervisor the real tier installs.
+#
+# clh is Cloud Hypervisor, the hypervisor the provider defaults to, so the
+# suites test what a cell actually runs. Kata 4.x builds the Cloud Hypervisor
+# shim for x86_64 only, so an arm64 host runs the tier with `E2E_KATA_SHIM=qemu`
+# — the same override an arm64 cell makes in the provider's configuration.
+E2E_KATA_SHIM="${E2E_KATA_SHIM:-clh}"
+
+# The Kubernetes RuntimeClass that instance Pods name. kata-deploy names each
+# class after the shim it installs, and both tiers use that name deliberately.
+# The provider's configuration stays the same whichever runtime sits behind the
+# name, and so does every assertion about the Pod the provider builds. Only the
+# handler that the object resolves to changes.
+E2E_RUNTIME_CLASS="${E2E_RUNTIME_CLASS:-kata-${E2E_KATA_SHIM}}"
 
 # On macOS, the Kata tier needs a Linux virtual machine that exposes nested
 # virtualization. A dedicated colima profile provides that virtual machine. The

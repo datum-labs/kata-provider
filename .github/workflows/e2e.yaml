@@ -68,6 +68,10 @@ jobs:
   # the whole tier has passed on such a runner, booting real guests with their
   # own kernel.
   #
+  # The runner is x86_64, so the tier installs Cloud Hypervisor here, which is
+  # the hypervisor the provider targets by default. Kata builds that shim for
+  # x86_64 only.
+  #
   # The job still reports rather than gates, because KVM on a hosted runner is
   # not a documented, supported guarantee and can be withdrawn without notice.
   # KVM is the Linux Kernel-based Virtual Machine interface. Gating the branch
@@ -120,6 +124,6 @@ jobs:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run every suite against real Kata Containers
+      - name: Run every suite against real Kata Containers on Cloud Hypervisor
         if: steps.kvm.outputs.available == 'true'
         run: task e2e TIER=kata

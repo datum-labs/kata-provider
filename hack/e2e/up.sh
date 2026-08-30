@@ -37,14 +37,23 @@ kctl label node --all katacontainers.io/kata-runtime=true --overwrite >/dev/null
 case "${E2E_TIER}" in
 runc)
 	log "installing the runc-handled RuntimeClass ${E2E_RUNTIME_CLASS}"
-	kctl apply -f "${REPO_ROOT}/hack/e2e/runtimeclass-runc.yaml" >/dev/null
+	# The object carries whatever name the tier is running under, so the
+	# manifest names it here rather than fixing one name in the file.
+	sed "s|@RUNTIME_CLASS@|${E2E_RUNTIME_CLASS}|" \
+		"${REPO_ROOT}/hack/e2e/runtimeclass-runc.yaml" | kctl apply -f - >/dev/null
 	;;
 kata)
-	log "installing kata-deploy ${KATA_VERSION}"
+	log "installing kata-deploy ${KATA_VERSION} with the ${E2E_KATA_SHIM} shim"
+	# The shim selection sits here rather than in the values file, so one
+	# variable decides the hypervisor, the RuntimeClass name the suites assert
+	# on, and the handler the provider is configured with.
 	helm --kubeconfig "${E2E_KUBECONFIG}" upgrade --install kata-deploy \
 		"${KATA_CHART}" --version "${KATA_VERSION}" \
 		--namespace kube-system \
 		--values "${REPO_ROOT}/hack/e2e/kata-values.yaml" \
+		--set "shims.${E2E_KATA_SHIM}.enabled=true" \
+		--set "defaultShim.amd64=${E2E_KATA_SHIM}" \
+		--set "defaultShim.arm64=${E2E_KATA_SHIM}" \
 		--wait --timeout 10m >/dev/null
 
 	# On a newly created cluster, the DaemonSet exists before any of its Pods do,
