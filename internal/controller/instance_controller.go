@@ -32,29 +32,30 @@ import (
 
 const (
 	// instanceFinalizer gates Instance deletion on teardown of the backing Pod.
-	// The provider holds it until the Pod is deleted and observed gone, so the
-	// Instance — and the WorkloadDeployment and Workload waiting on it — is
-	// never removed while a guest is still running.
+	// The provider holds the finalizer until it has deleted the Pod and
+	// observed the Pod gone. The Instance therefore never disappears while a
+	// guest is still running, and neither does the WorkloadDeployment or the
+	// Workload waiting on that Instance.
 	instanceFinalizer = "kata.datumapis.com/finalizer"
 
-	// DefaultRuntimeHandler is the Kubernetes RuntimeClass the provider targets
-	// when a deployment names none.
+	// DefaultRuntimeHandler is the Kubernetes RuntimeClass that the provider
+	// targets when a deployment names none.
 	//
-	// kata-qemu is the handler kata-deploy installs everywhere and the one the
-	// project tests most broadly: it supports both x86_64 and arm64 and the
-	// widest device model. kata-clh starts faster but is narrower in what it
-	// can attach, so a site trades up to it deliberately rather than by
-	// default.
+	// kata-deploy installs the kata-qemu handler everywhere, and the Kata
+	// project tests that handler most broadly. It supports both x86_64 and
+	// arm64, and the widest device model. kata-clh starts faster but attaches a
+	// narrower set of devices, so a site moves to it deliberately rather than
+	// by default.
 	DefaultRuntimeHandler = "kata-qemu"
 
-	// kataAnnotationPrefix is the annotation namespace Kata reads runtime
-	// configuration from. Nothing under it may originate with a tenant; see
-	// podAnnotations.
+	// kataAnnotationPrefix is the annotation namespace that Kata reads runtime
+	// configuration from. No key under the prefix may originate with a tenant.
+	// For the reasoning, see podAnnotations.
 	kataAnnotationPrefix = "io.katacontainers."
 
-	// managedByLabel and instanceLabel mark a Pod as this provider's and point
-	// back at the Instance it realizes, so an operator can find either from the
-	// other without parsing owner references.
+	// managedByLabel and instanceLabel mark a Pod as this provider's, and point
+	// back at the Instance that the Pod realizes. An operator can then find
+	// either object from the other without parsing owner references.
 	managedByLabel = "managed-by"
 	instanceLabel  = "upstream.instance"
 
@@ -62,28 +63,30 @@ const (
 )
 
 // DefaultNodeSelector places instance Pods on nodes where the Kata runtime is
-// installed. kata-deploy labels every node it has provisioned with this, so it
-// is the selector that works on an unmodified installation.
+// installed. kata-deploy labels every node it provisioned with this label, so
+// the selector works on an unmodified installation.
 var DefaultNodeSelector = map[string]string{
 	"katacontainers.io/kata-runtime": "true",
 }
 
 // providerRuntimeAnnotations is the complete allow-list of runtime annotations
-// the provider sets on an instance Pod, and the only keys under
-// kataAnnotationPrefix permitted to exist on one.
+// that the provider sets on an instance Pod. No other key under
+// kataAnnotationPrefix may exist on an instance Pod.
 //
 // SECURITY. Kata treats io.katacontainers.* Pod annotations as runtime
-// configuration and acts on them as host root. Every escape reported against it
-// in 2026 — up to a guest-to-host escape scoring 9.6 — reduces to the same bug:
-// a value a tenant could write reached that configuration. The defense is
-// structural rather than a matter of sanitizing values, so an instance Pod is
-// built with the annotations named here and no others. Instance metadata is
-// tenant-writable and is never a source for them.
+// configuration and acts on them as host root. Every escape reported against
+// Kata in 2026 reduces to the same bug, including a guest-to-host escape
+// scoring 9.6: a value that a tenant could write reached that configuration.
+// The defense here is structural, and it is not a matter of sanitizing values.
+// The provider builds an instance Pod with the annotations named in this map
+// and with no others. Instance metadata is tenant-writable, and it is never a
+// source for these annotations.
 //
-// It is empty because the provider needs no runtime annotation today: guest
-// sizing comes from the Pod's resource requests, which the platform computes
-// from the instance type catalog. Anything added here is a platform decision
-// with a fixed value, never a value copied from an Instance.
+// The map is empty because the provider needs no runtime annotation today.
+// Guest sizing comes from the Pod's resource requests, which the platform
+// computes from the instance type catalog. Any annotation added to this map is
+// a platform decision with a fixed value. It is never a value copied from an
+// Instance.
 var providerRuntimeAnnotations = map[string]string{}
 
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=instances,verbs=get;list;watch;update;patch
@@ -111,24 +114,25 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("failed to get instance: %w", err)
 	}
 
-	// Teardown runs before every short-circuit below, so an instance that
-	// became ineligible after its Pod was created still has that Pod removed.
+	// Teardown runs before every short-circuit below. An instance that became
+	// ineligible after its Pod was created therefore still has that Pod
+	// removed.
 	if !instance.DeletionTimestamp.IsZero() {
 		return r.handleDeletion(ctx, &instance)
 	}
 
-	// Only a sandbox of containers maps onto a Pod. A virtual machine instance
-	// is not something this class serves, and compute rejects it at apply time
-	// against the capabilities declared here, so reaching this point means the
-	// instance predates that validation: leave it alone rather than realize it
-	// as something it did not ask for.
+	// Only a sandbox of containers maps onto a Pod. This class does not serve a
+	// virtual machine instance, and compute rejects such an instance at apply
+	// time against the capabilities declared here. An instance that reaches
+	// this point predates that validation, so leave it alone rather than
+	// realize it as something it did not ask for.
 	if instance.Spec.Runtime.Sandbox == nil {
 		logger.Info("skipping instance that does not declare a sandbox runtime", "instance", instance.Name)
 		return ctrl.Result{}, nil
 	}
 
 	// A gated instance is not ready to be placed. Clearing the gate updates the
-	// spec, which re-triggers reconciliation, so no requeue is needed.
+	// spec, which re-triggers reconciliation, so this branch needs no requeue.
 	if instance.Spec.Controller != nil && len(instance.Spec.Controller.SchedulingGates) > 0 {
 		logger.Info("instance has scheduling gates, deferring placement",
 			"instance", instance.Name,
@@ -137,17 +141,18 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	// A suspended instance keeps its placement, addresses, and quota; only its
-	// process stops. Deleting the Pod stops it, and reconciliation recreates it
-	// when the instance is resumed.
+	// A suspended instance keeps its placement, its addresses, and its quota.
+	// Only its process stops. Deleting the Pod stops the process, and
+	// reconciliation recreates the Pod when the customer resumes the instance.
 	if instance.Status.Suspended {
 		return r.reconcileSuspended(ctx, &instance)
 	}
 
-	// The finalizer goes on only once the provider has decided this instance is
-	// its to realize, so an instance it never backed — one still gated, or one
-	// shaped as something this class does not run — is not held up on a
-	// teardown that has nothing to do.
+	// The provider adds the finalizer only once it has decided that this
+	// instance is its to realize. An instance the provider never backed is
+	// therefore never held up on a teardown with nothing to do. Such an
+	// instance is one that is still gated, or one shaped as something this
+	// class does not run.
 	if !controllerutil.ContainsFinalizer(&instance, instanceFinalizer) {
 		controllerutil.AddFinalizer(&instance, instanceFinalizer)
 		if err := r.Update(ctx, &instance); err != nil {
@@ -158,13 +163,14 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return r.reconcileInstance(ctx, &instance)
 }
 
-// handleDeletion stops the instance and releases the finalizer only once its
-// Pod is confirmed gone.
+// handleDeletion stops the instance, and releases the finalizer only once the
+// instance's Pod is confirmed gone.
 //
-// The Pod is deleted explicitly rather than left to owner-reference garbage
-// collection: GC will not reclaim it until the Instance leaves etcd, and the
-// Instance cannot leave etcd while this finalizer is held. The owner reference
-// remains as a backstop for a Pod created before the finalizer was recorded.
+// The provider deletes the Pod explicitly rather than leaving it to
+// owner-reference garbage collection. Garbage collection does not reclaim the
+// Pod until the Instance leaves etcd, and the Instance cannot leave etcd while
+// the provider holds this finalizer. The owner reference remains as a backstop
+// for a Pod created before the finalizer was recorded.
 func (r *InstanceReconciler) handleDeletion(ctx context.Context, instance *computev1alpha.Instance) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -178,11 +184,11 @@ func (r *InstanceReconciler) handleDeletion(ctx context.Context, instance *compu
 		return ctrl.Result{}, fmt.Errorf("failed to delete pod for instance %s: %w", instance.Name, err)
 	}
 
-	// A Kata guest takes time to shut down, and the Pod exists until it has.
-	// Releasing the finalizer earlier would report the instance gone while its
-	// guest still held the node's memory and its addresses. The Owns(Pod) watch
-	// re-triggers on final removal; the requeue is a backstop for a missed
-	// event.
+	// A Kata guest takes time to shut down, and the Pod exists until the guest
+	// has stopped. Releasing the finalizer earlier would report the instance
+	// gone while its guest still held the node's memory and its addresses. The
+	// Owns(Pod) watch re-triggers on the Pod's final removal, and the requeue
+	// is a backstop for a missed event.
 	pending, err := r.backingPodPending(ctx, instance)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -216,12 +222,12 @@ func (r *InstanceReconciler) backingPodPending(ctx context.Context, instance *co
 }
 
 // reconcileSuspended stops the instance's process without releasing anything
-// else it holds.
+// else that the instance holds.
 //
-// The Instance object, its finalizer, and its addresses stay. Status is left
-// alone: compute owns the Available and Ready conditions of a suspended
-// instance and writes the suspension reason itself, so a provider writing them
-// here would only fight it.
+// The Instance object, its finalizer, and its addresses stay. The provider
+// leaves status alone. Compute owns the Available and Ready conditions of a
+// suspended instance, and compute writes the suspension reason itself. A
+// provider writing those conditions here would only fight compute.
 func (r *InstanceReconciler) reconcileSuspended(ctx context.Context, instance *computev1alpha.Instance) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -242,9 +248,9 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 		return ctrl.Result{}, fmt.Errorf("failed to build pod for instance %s: %w", instance.Name, err)
 	}
 
-	// What actually makes the instance Kata-isolated: the Pod names a
-	// Kubernetes RuntimeClass, and the kubelet hands it to the Kata handler
-	// instead of the shared-kernel default.
+	// The RuntimeClass name is what makes the instance Kata-isolated. The Pod
+	// names a Kubernetes RuntimeClass, and the kubelet hands the Pod to the
+	// Kata handler instead of to the shared-kernel default.
 	desired.Spec.RuntimeClassName = ptr.To(r.runtimeHandler())
 
 	pod := &core.Pod{
@@ -265,9 +271,9 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 		pod.Annotations = podAnnotations(pod.Annotations)
 
 		// A Pod's containers and resources are immutable in the ways that
-		// matter here, and a Kata guest cannot be resized in place, so an
-		// existing Pod keeps the spec it booted with. Compute replaces the
-		// instance when its template changes.
+		// matter here, and Kata cannot resize a guest in place, so an existing
+		// Pod keeps the spec it booted with. Compute replaces the instance when
+		// its template changes.
 		if pod.CreationTimestamp.IsZero() {
 			pod.Spec = desired.Spec
 		}
@@ -295,10 +301,10 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	return ctrl.Result{}, nil
 }
 
-// podOptions is the Kata-specific policy this provider contributes to an
-// otherwise platform-owned translation. Everything else about the Pod —
-// containers, volumes, environment, ports, and sizing from the instance type
-// catalog — comes from the shared translation, so the two runtime classes
+// podOptions returns the Kata-specific policy that this provider contributes to
+// an otherwise platform-owned translation. The shared translation supplies
+// everything else about the Pod: containers, volumes, environment, ports, and
+// sizing from the instance type catalog. The two runtime classes therefore
 // cannot drift into two dialects of the same instance.
 func (r *InstanceReconciler) podOptions(instance *computev1alpha.Instance) instancepod.Options {
 	return instancepod.Options{
@@ -313,18 +319,20 @@ func (r *InstanceReconciler) podOptions(instance *computev1alpha.Instance) insta
 	}
 }
 
-// podAnnotations returns the annotations an instance Pod carries, given
-// whatever a Pod already has.
+// podAnnotations returns the annotations that an instance Pod carries, given
+// whatever annotations that Pod already has.
 //
-// SECURITY, read before changing. The result is built from the provider's own
-// allow-list. Nothing is copied from the Instance, which is tenant-writable,
-// and any io.katacontainers.* key already present that the provider did not put
-// there is removed rather than preserved — Kata reads those as host-root
-// runtime configuration, and every 2026 escape against it came from a tenant
-// reaching one. Do not add passthrough of Instance annotations here, however
-// narrowly scoped it looks: a prefix filter is what those CVEs got wrong. A new
-// runtime annotation belongs in providerRuntimeAnnotations with a fixed,
-// platform-chosen value.
+// SECURITY. Read this comment before changing the function. The provider builds
+// the result from its own allow-list. The function copies nothing from the
+// Instance, which is tenant-writable. The function also removes, rather than
+// preserves, any io.katacontainers.* key already present that the provider did
+// not put there. Kata reads those keys as host-root runtime configuration, and
+// every 2026 escape against Kata came from a tenant reaching one of them. Do
+// not add passthrough of Instance annotations here, however narrowly scoped the
+// passthrough looks. A prefix filter over tenant input is exactly what the
+// known Common Vulnerabilities and Exposures (CVE) reports in this area got
+// wrong. A new runtime annotation belongs in providerRuntimeAnnotations, with a
+// fixed, platform-chosen value.
 func podAnnotations(existing map[string]string) map[string]string {
 	annotations := make(map[string]string, len(existing)+len(providerRuntimeAnnotations))
 
@@ -342,15 +350,16 @@ func podAnnotations(existing map[string]string) map[string]string {
 	return annotations
 }
 
-// runtimeHandler is the name of the Kubernetes RuntimeClass — the cluster
-// object that points containerd at a Kata handler — that instance Pods run
-// under.
+// runtimeHandler returns the name of the Kubernetes RuntimeClass that instance
+// Pods run under. A Kubernetes RuntimeClass is the cluster object that points
+// containerd at a Kata handler.
 //
-// This is NOT Datum's runtime class. Datum's is a customer-facing promise about
-// isolation, compatibility, startup, and price, selected on a workload;
-// Kubernetes' is a node-level runtime binding. This provider serves exactly one
-// Datum class, and targets exactly one Kubernetes RuntimeClass to do it. The
-// two happen to be related here and are unrelated concepts everywhere else.
+// A Kubernetes RuntimeClass is NOT a Datum runtime class. A Datum runtime class
+// is a customer-facing promise about isolation, compatibility, startup, and
+// price, and a customer selects it on a workload. A Kubernetes RuntimeClass is
+// a node-level runtime binding. This provider serves exactly one Datum class,
+// and it targets exactly one Kubernetes RuntimeClass to do so. The two are
+// related here, and they are unrelated concepts everywhere else.
 func (r *InstanceReconciler) runtimeHandler() string {
 	if r.Config != nil && r.Config.DownstreamResourceManagement.RuntimeHandler != "" {
 		return r.Config.DownstreamResourceManagement.RuntimeHandler
@@ -375,8 +384,9 @@ func (r *InstanceReconciler) tolerations() []core.Toleration {
 // syncInstanceStatus reports what the customer sees on their instance.
 //
 // The provider owns Programmed, Available, the observed template hash, and the
-// network interface status. It must not write Ready: compute derives that from
-// Programmed and Available, and writing it here would race that derivation.
+// network interface status. The provider must not write Ready. Compute derives
+// Ready from Programmed and Available, and writing Ready here would race that
+// derivation.
 func (r *InstanceReconciler) syncInstanceStatus(
 	ctx context.Context,
 	instance *computev1alpha.Instance,
@@ -384,8 +394,9 @@ func (r *InstanceReconciler) syncInstanceStatus(
 ) error {
 	logger := log.FromContext(ctx)
 
-	// Snapshot before any mutation so the patch carries only the fields this
-	// controller owns. QuotaGranted and Ready belong to compute.
+	// Snapshot the instance before any mutation, so that the patch carries only
+	// the fields this controller owns. QuotaGranted and Ready belong to
+	// compute.
 	base := instance.DeepCopy()
 
 	available := metav1.Condition{
@@ -415,8 +426,8 @@ func (r *InstanceReconciler) syncInstanceStatus(
 		programmed.Message = "Instance is available"
 
 		// Compute counts an instance toward its deployment's replicas only
-		// while the hash it observed matches the template it was asked for, so
-		// the hash is echoed back once the instance is actually running.
+		// while the hash it observed matches the template it asked for. The
+		// provider therefore echoes the hash back once the instance is running.
 		if instance.Spec.Controller != nil {
 			if instance.Status.Controller == nil {
 				instance.Status.Controller = &computev1alpha.InstanceControllerStatus{}
@@ -429,9 +440,9 @@ func (r *InstanceReconciler) syncInstanceStatus(
 
 	case core.PodPending:
 		// The first container that reports why it is waiting explains the whole
-		// instance. Its Kubernetes reason is translated centrally into
-		// Instance-domain language, and the raw detail is logged for operators
-		// rather than shown to the customer.
+		// instance. A shared helper translates that container's Kubernetes
+		// reason into Instance-domain language. The raw detail goes to the log
+		// for operators rather than to the customer.
 		for _, status := range pod.Status.ContainerStatuses {
 			if status.State.Waiting == nil || status.State.Waiting.Reason == "" {
 				continue
@@ -481,15 +492,15 @@ func (r *InstanceReconciler) syncInstanceStatus(
 	}
 
 	// An optimistic-lock merge patch turns a concurrent write by compute's
-	// quota controller into a conflict the caller requeues on, rather than
-	// silently clobbering it.
+	// quota controller into a conflict that the caller requeues on, rather than
+	// silently overwriting that write.
 	return r.Status().Patch(ctx, instance, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{}))
 }
 
-// buildNetworkInterfaceStatus reports the addresses the instance is reachable
-// at. The Pod's addresses are the instance's addresses: a Kata guest holds the
-// Pod's network namespace, so what the cluster assigned the Pod is what runs
-// inside the guest.
+// buildNetworkInterfaceStatus reports the addresses that the instance is
+// reachable at. The Pod's addresses are the instance's addresses. A Kata guest
+// holds the Pod's network namespace, so the address that the cluster assigned
+// to the Pod is the address that runs inside the guest.
 func buildNetworkInterfaceStatus(
 	instance *computev1alpha.Instance,
 	pod *core.Pod,
@@ -511,8 +522,9 @@ func buildNetworkInterfaceStatus(
 			continue
 		}
 
-		// A Pod address is a single host address, so it is reported at its
-		// full prefix length rather than that of the subnet behind it.
+		// A Pod address is a single host address, so the provider reports it
+		// at its full prefix length rather than at the prefix length of the
+		// subnet behind it.
 		family := networkingv1alpha.IPv6Protocol
 		prefix := "/128"
 		if parsed.To4() != nil {
@@ -548,10 +560,11 @@ func buildNetworkInterfaceStatus(
 	}
 }
 
-// SetupWithManager sets up the controller with the Manager.
+// SetupWithManager registers the controller with the Manager.
 //
-// The class selector is applied to the manager's CACHE rather than here; see
-// InstanceCacheOptions.
+// The class selector applies to the manager's CACHE, not to this controller's
+// event filters. A predicate alone still caches every object. For the
+// reasoning, see CacheOptions.
 func (r *InstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Client == nil {
 		r.Client = mgr.GetClient()

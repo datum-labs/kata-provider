@@ -41,7 +41,7 @@ func testScheme(t *testing.T) *runtime.Scheme {
 	return s
 }
 
-// newTestInstance returns an instance shaped the way compute creates them: a
+// newTestInstance returns an instance shaped the way compute creates one: a
 // single-container sandbox, sized by instance type, in the general-purpose
 // runtime class.
 func newTestInstance(mutators ...func(*computev1alpha.Instance)) *computev1alpha.Instance {
@@ -117,9 +117,10 @@ func getInstance(t *testing.T, c client.Client) *computev1alpha.Instance {
 	return &instance
 }
 
-// TestReconcile_KataPodPolicy covers the policy this provider contributes to an
-// otherwise platform-owned Pod: which Kubernetes RuntimeClass the instance runs
-// under, where it lands, and how it is labelled.
+// TestReconcile_KataPodPolicy covers the policy that this provider contributes
+// to an otherwise platform-owned Pod: which Kubernetes RuntimeClass the
+// instance runs under, where the instance lands, and how the provider labels
+// it.
 func TestReconcile_KataPodPolicy(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -199,7 +200,7 @@ func TestReconcile_KataPodPolicy(t *testing.T) {
 	}
 }
 
-// TestReconcile_SizingComesFromTheCatalog checks that an instance is given what
+// TestReconcile_SizingComesFromTheCatalog checks that an instance receives what
 // the platform claimed quota for, rather than a size this provider invented.
 func TestReconcile_SizingComesFromTheCatalog(t *testing.T) {
 	reconciler, fakeClient := newReconciler(t, nil, newTestInstance())
@@ -234,9 +235,11 @@ func TestReconcile_SizingComesFromTheCatalog(t *testing.T) {
 // out of runtime configuration.
 //
 // Kata reads io.katacontainers.* Pod annotations as host-root configuration.
-// Every 2026 escape against it came from a tenant reaching one, so a tenant
-// annotation must not survive onto an instance Pod by any route: not copied
-// from the Instance, and not left in place if it somehow reached the Pod.
+// Every 2026 escape against Kata came from a tenant reaching one of those
+// annotations. A tenant annotation must therefore not survive onto an instance
+// Pod by any route. The provider must not copy such an annotation from the
+// Instance, and must not leave one in place if it reached the Pod by another
+// path.
 func TestPodAnnotations(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -289,8 +292,8 @@ func TestPodAnnotations(t *testing.T) {
 }
 
 // TestReconcile_TenantAnnotationsNeverReachThePod is the end-to-end form of the
-// same guarantee: an Instance is tenant-writable, so nothing on it may become
-// runtime configuration.
+// same guarantee. An Instance is tenant-writable, so nothing on an Instance may
+// become runtime configuration.
 func TestReconcile_TenantAnnotationsNeverReachThePod(t *testing.T) {
 	instance := newTestInstance(func(i *computev1alpha.Instance) {
 		i.Annotations = map[string]string{
@@ -344,8 +347,8 @@ func TestReconcile_SuspendAndResume(t *testing.T) {
 		t.Error("expected the instance process to be stopped while suspended")
 	}
 
-	// Suspension is not deletion: the instance keeps its place in the system,
-	// so the provider keeps its claim on it.
+	// Suspension is not deletion. The instance keeps its place in the system,
+	// so the provider keeps its claim on the instance.
 	suspended := getInstance(t, fakeClient)
 	if !hasFinalizer(suspended) {
 		t.Error("expected the provider to keep its finalizer on a suspended instance")
@@ -365,7 +368,7 @@ func TestReconcile_SuspendAndResume(t *testing.T) {
 }
 
 // TestReconcile_FinalizerIsClaimScoped checks that the provider takes a
-// finalizer only on the instances it actually backs. An instance it never
+// finalizer only on the instances it backs. An instance that the provider never
 // realized must not be held up on a teardown with nothing to do.
 func TestReconcile_FinalizerIsClaimScoped(t *testing.T) {
 	tests := []struct {
@@ -415,10 +418,10 @@ func TestReconcile_FinalizerIsClaimScoped(t *testing.T) {
 	}
 }
 
-// TestReconcile_TeardownOrdering checks that an instance is not reported gone
-// while its guest is still shutting down. Releasing the finalizer early would
-// tell the workload above it that capacity, addresses, and quota were free
-// before they were.
+// TestReconcile_TeardownOrdering checks that the provider does not report an
+// instance gone while its guest is still shutting down. Releasing the finalizer
+// early would tell the workload above the instance that capacity, addresses,
+// and quota were free before they were.
 func TestReconcile_TeardownOrdering(t *testing.T) {
 	ctx := context.Background()
 
@@ -451,7 +454,7 @@ func TestReconcile_TeardownOrdering(t *testing.T) {
 		t.Fatal("finalizer released while the instance was still running")
 	}
 
-	// The guest finishes shutting down and its Pod goes away.
+	// The guest finishes shutting down, and its Pod goes away.
 	var pod core.Pod
 	if err := fakeClient.Get(ctx, client.ObjectKeyFromObject(lingering), &pod); err != nil {
 		t.Fatalf("failed to get pod: %v", err)
@@ -478,7 +481,7 @@ func TestReconcile_TeardownOrdering(t *testing.T) {
 }
 
 // TestSyncInstanceStatus covers what a customer reads on their instance: the
-// conditions compute derives readiness from, and the words used to explain a
+// conditions that compute derives readiness from, and the words that explain a
 // failure.
 func TestSyncInstanceStatus(t *testing.T) {
 	tests := []struct {
@@ -568,7 +571,7 @@ func TestSyncInstanceStatus(t *testing.T) {
 					available.Status, available.Reason, tc.wantAvailable, tc.wantAvailableReason)
 			}
 
-			// Readiness is compute's to derive from the two conditions above.
+			// Compute derives readiness from the two conditions above.
 			if apimeta.FindStatusCondition(updated.Status.Conditions, computev1alpha.InstanceReady) != nil {
 				t.Error("the provider must not write the Ready condition")
 			}
@@ -576,8 +579,8 @@ func TestSyncInstanceStatus(t *testing.T) {
 	}
 }
 
-// TestBuildNetworkInterfaceStatus checks the addresses reported back to the
-// customer for their instance.
+// TestBuildNetworkInterfaceStatus checks the addresses that the provider
+// reports back to the customer for their instance.
 func TestBuildNetworkInterfaceStatus(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -662,7 +665,7 @@ func podWithPhase(phase core.PodPhase) *core.Pod {
 	}
 }
 
-// podWaitingWith builds a pending pod whose container reports why it has not
+// podWaitingWith builds a pending Pod whose container reports why it has not
 // started, as the kubelet does for a failed image pull or a crash loop.
 func podWaitingWith(k8sReason string) *core.Pod {
 	pod := podWithPhase(core.PodPending)

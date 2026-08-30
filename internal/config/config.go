@@ -30,13 +30,13 @@ type KataProvider struct {
 
 // +k8s:deepcopy-gen=true
 
-// WebhookServerConfig configures the webhook server
+// WebhookServerConfig configures the webhook server.
 type WebhookServerConfig struct {
-	// Host is the address that the server will listen on.
-	// Defaults to "" - all addresses.
+	// Host is the address that the server listens on. An empty value means all
+	// addresses.
 	Host string `json:"host"`
 
-	// Port is the port number that the server will serve.
+	// Port is the port number that the server listens on.
 	// +default=9443
 	Port int `json:"port"`
 
@@ -62,9 +62,9 @@ func (w *WebhookServerConfig) Options(_ context.Context, _ client.Client) webhoo
 
 // +k8s:deepcopy-gen=true
 
-// MetricsServerConfig configures the metrics server
+// MetricsServerConfig configures the metrics server.
 type MetricsServerConfig struct {
-	// BindAddress is the TCP address that the server should bind to.
+	// BindAddress is the TCP address that the server binds to.
 	// +default=":8080"
 	BindAddress string `json:"bindAddress"`
 
@@ -99,38 +99,40 @@ func (m *MetricsServerConfig) Options(_ context.Context, _ client.Client) metric
 
 // +k8s:deepcopy-gen=true
 
-// DownstreamResourceManagementConfig configures how instance Pods are placed in
-// the cell cluster hosting them.
+// DownstreamResourceManagementConfig configures how the provider places
+// instance Pods in the cell cluster that hosts them.
 //
 // Instance Pods run on ordinary kubelet nodes in the same cluster as the
-// provider, so ConfigMap and Secret volumes are referenced by name and resolved
-// by the kubelet under its own node identity. The provider never reads or
-// mirrors their contents.
+// provider. A Pod therefore refers to ConfigMap and Secret volumes by name, and
+// the kubelet resolves them under its own node identity. The provider never
+// reads or mirrors their contents.
 type DownstreamResourceManagementConfig struct {
-	// NodeSelector overrides the node selector applied to every instance Pod.
-	// When unset the provider selects DefaultNodeSelector, the label
-	// kata-deploy applies to every node it has installed the runtime on.
-	// Override it where the runtime is installed by other means, or where a
-	// subset of the Kata-capable nodes is reserved for this class.
+	// NodeSelector overrides the node selector that the provider applies to
+	// every instance Pod. When the field is unset, the provider selects
+	// DefaultNodeSelector, which is the label that kata-deploy applies to every
+	// node where it installed the runtime. Override the field where another
+	// mechanism installs the runtime, or where a deployment reserves a subset
+	// of the Kata-capable nodes for this class.
 	//
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
-	// Tolerations overrides the tolerations applied to every instance Pod.
-	// Kata-capable nodes carry no taint by default, so the provider adds none;
-	// set this where a deployment taints the nodes reserved for tenant
-	// instances.
+	// Tolerations overrides the tolerations that the provider applies to every
+	// instance Pod. Kata-capable nodes carry no taint by default, so the
+	// provider adds none. Set this field where a deployment taints the nodes
+	// reserved for tenant instances.
 	//
 	// +optional
 	Tolerations []core.Toleration `json:"tolerations,omitempty"`
 
-	// RuntimeHandler is the name of the Kubernetes RuntimeClass the instance
-	// Pods run under. Which Kata hypervisor a site runs is a deployment
-	// decision — kata-qemu and kata-clh are installed under different handler
-	// names and differ in device support and startup latency — so it is
-	// configured rather than compiled in. Defaults to DefaultRuntimeHandler.
+	// RuntimeHandler is the name of the Kubernetes RuntimeClass that the
+	// instance Pods run under. The Kata hypervisor that a site runs is a
+	// deployment decision, so this field is configurable rather than compiled
+	// in. kata-qemu and kata-clh install under different handler names, and
+	// they differ in device support and in startup latency. Defaults to
+	// DefaultRuntimeHandler.
 	//
-	// A tenant cannot influence this value: it comes from provider
+	// A tenant cannot influence this value. The value comes from provider
 	// configuration, never from the Instance.
 	//
 	// +optional

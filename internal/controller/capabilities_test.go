@@ -13,8 +13,9 @@ import (
 )
 
 // TestCapabilities pins the published contract of the general-purpose class.
-// Adding or removing a feature here changes what customers are promised, so it
-// should be a deliberate edit to this table rather than a side effect.
+// Adding or removing a feature changes what the platform promises customers, so
+// any such change must be a deliberate edit to this table rather than a side
+// effect.
 func TestCapabilities(t *testing.T) {
 	if Capabilities.Class != computev1alpha.RuntimeClassGeneralPurpose {
 		t.Fatalf("class = %q, want %q", Capabilities.Class, computev1alpha.RuntimeClassGeneralPurpose)
@@ -44,9 +45,9 @@ func TestCapabilities(t *testing.T) {
 	}
 }
 
-// TestCapabilities_UnsupportedRequestsAreRejected checks that a request this
-// class cannot serve is refused with the class named, rather than served with
-// the unsupported part quietly dropped.
+// TestCapabilities_UnsupportedRequestsAreRejected checks that compute refuses a
+// request this class cannot serve, and names the class, rather than serving the
+// request with the unsupported part silently dropped.
 func TestCapabilities_UnsupportedRequestsAreRejected(t *testing.T) {
 	tests := []struct {
 		name       string
