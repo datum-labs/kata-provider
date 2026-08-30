@@ -4,10 +4,13 @@ metricsServer:
   bindAddress: ":8080"
 webhookServer: {}
 downstreamResourceManagement:
-  # The Kubernetes RuntimeClass instance Pods run under. Which Kata hypervisor
-  # a site runs is a deployment decision, so an overlay that installs kata-clh
-  # (or a site-specific handler) patches this ConfigMap.
-  runtimeHandler: kata-qemu
+  # The Kubernetes RuntimeClass instance Pods run under. kata-clh runs the guest
+  # under Cloud Hypervisor, which reserves far less memory per instance than
+  # QEMU and so raises how many instances a node holds. Which Kata hypervisor a
+  # site runs stays a deployment decision, so an overlay that installs a
+  # different handler patches this ConfigMap. An arm64 overlay must: Kata 4.x
+  # builds Cloud Hypervisor for x86_64 only, so arm64 sets kata-qemu here.
+  runtimeHandler: kata-clh
   # nodeSelector and tolerations are left unset: the provider then selects
   # katacontainers.io/kata-runtime=true, the label kata-deploy applies to every
   # node it has installed the runtime on, and adds no toleration. Set them in an

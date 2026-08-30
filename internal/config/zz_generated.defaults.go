@@ -25,6 +25,6 @@ func SetObjectDefaults_KataProvider(in *KataProvider) {
 		in.WebhookServer.Port = 9443
 	}
 	if in.DownstreamResourceManagement.RuntimeHandler == "" {
-		in.DownstreamResourceManagement.RuntimeHandler = "kata-qemu"
+		in.DownstreamResourceManagement.RuntimeHandler = "kata-clh"
 	}
 }

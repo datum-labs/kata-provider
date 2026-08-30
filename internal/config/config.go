@@ -128,14 +128,19 @@ type DownstreamResourceManagementConfig struct {
 	// RuntimeHandler is the name of the Kubernetes RuntimeClass that the
 	// instance Pods run under. The Kata hypervisor that a site runs is a
 	// deployment decision, so this field is configurable rather than compiled
-	// in. kata-qemu and kata-clh install under different handler names, and
-	// they differ in device support and in startup latency. Defaults to
-	// DefaultRuntimeHandler.
+	// in. kata-clh and kata-qemu install under different handler names, and
+	// they differ in per-instance memory overhead, in device support, and in
+	// boot latency. Defaults to DefaultRuntimeHandler, which is the Cloud
+	// Hypervisor handler.
+	//
+	// Set this field to kata-qemu on arm64. Kata 4.x ships Cloud Hypervisor for
+	// x86_64 only, so the default handler resolves to nothing on an arm64 node,
+	// and every instance on that node stays unschedulable.
 	//
 	// A tenant cannot influence this value. The value comes from provider
 	// configuration, never from the Instance.
 	//
 	// +optional
-	// +default="kata-qemu"
+	// +default="kata-clh"
 	RuntimeHandler string `json:"runtimeHandler,omitempty"`
 }
