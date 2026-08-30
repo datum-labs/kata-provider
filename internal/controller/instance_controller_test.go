@@ -129,19 +129,19 @@ func TestReconcile_KataPodPolicy(t *testing.T) {
 		wantTolerations    int
 	}{
 		{
-			name:               "unconfigured provider uses the kata-qemu handler and kata-deploy's node label",
+			name:               "unconfigured provider uses the Cloud Hypervisor handler and kata-deploy's node label",
 			config:             nil,
 			wantRuntimeHandler: DefaultRuntimeHandler,
 			wantNodeSelector:   DefaultNodeSelector,
 		},
 		{
-			name: "hypervisor choice is a deployment decision",
+			name: "hypervisor choice is a deployment decision, as an arm64 site must make",
 			config: &config.KataProvider{
 				DownstreamResourceManagement: config.DownstreamResourceManagementConfig{
-					RuntimeHandler: "kata-clh",
+					RuntimeHandler: "kata-qemu",
 				},
 			},
-			wantRuntimeHandler: "kata-clh",
+			wantRuntimeHandler: "kata-qemu",
 			wantNodeSelector:   DefaultNodeSelector,
 		},
 		{

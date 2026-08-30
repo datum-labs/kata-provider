@@ -34,6 +34,36 @@ func TestDecodeShippedConfig(t *testing.T) {
 		t.Fatalf("failed to decode the shipped config: %v", err)
 	}
 
+	if got := config.DownstreamResourceManagement.RuntimeHandler; got != "kata-clh" {
+		t.Errorf("runtimeHandler = %q, want %q", got, "kata-clh")
+	}
+}
+
+// TestExplicitRuntimeHandlerSurvivesDefaulting decodes a config that names
+// kata-qemu. Defaulting must leave it alone: an arm64 site has no Cloud
+// Hypervisor shim to run, so overriding the handler is the only way it can
+// serve the tier at all.
+func TestExplicitRuntimeHandlerSurvivesDefaulting(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add config scheme: %v", err)
+	}
+	if err := RegisterDefaults(scheme); err != nil {
+		t.Fatalf("failed to register defaults: %v", err)
+	}
+	codecs := serializer.NewCodecFactory(scheme, serializer.EnableStrict)
+
+	data := []byte(`apiVersion: apiserver.config.datumapis.com/v1alpha1
+kind: KataProvider
+downstreamResourceManagement:
+  runtimeHandler: kata-qemu
+`)
+
+	var config KataProvider
+	if err := runtime.DecodeInto(codecs.UniversalDecoder(), data, &config); err != nil {
+		t.Fatalf("failed to decode the config: %v", err)
+	}
+
 	if got := config.DownstreamResourceManagement.RuntimeHandler; got != "kata-qemu" {
 		t.Errorf("runtimeHandler = %q, want %q", got, "kata-qemu")
 	}
@@ -46,8 +76,8 @@ func TestDefaults(t *testing.T) {
 	var config KataProvider
 	SetObjectDefaults_KataProvider(&config)
 
-	if got := config.DownstreamResourceManagement.RuntimeHandler; got == "" {
-		t.Error("expected a default Kubernetes RuntimeClass handler")
+	if got := config.DownstreamResourceManagement.RuntimeHandler; got != "kata-clh" {
+		t.Errorf("runtimeHandler = %q, want %q", got, "kata-clh")
 	}
 	if got := config.MetricsServer.BindAddress; got == "" {
 		t.Error("expected a default metrics bind address")
