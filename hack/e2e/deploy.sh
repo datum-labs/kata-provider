@@ -2,9 +2,9 @@
 # Build the provider from the working tree and deploy it into the tier's
 # cluster.
 #
-# The image is built and side-loaded rather than pulled: a run must test the
-# code in front of the developer, not whatever was last published, and must not
-# depend on a registry.
+# The script builds and side-loads the image rather than pulling it. A run must
+# test the code in front of the developer, not the last published image, and
+# must not depend on a registry.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

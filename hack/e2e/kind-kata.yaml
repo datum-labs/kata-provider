@@ -1,8 +1,10 @@
 # The Kata tier's cluster: a single-node Kind cluster that can run a hypervisor.
 #
-# Kata boots a VM per instance from inside the node container, so the node needs
-# the host's KVM device and the host's kernel modules. Without /dev/kvm the
-# guest cannot be created at all and every instance stays in ContainerCreating.
+# Kata boots one virtual machine per instance from inside the node container.
+# The node therefore needs the host's KVM device and the host's kernel modules,
+# where KVM is the Linux Kernel-based Virtual Machine interface. Without
+# /dev/kvm, Kata cannot create the guest at all, and every instance stays in
+# ContainerCreating.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: kata

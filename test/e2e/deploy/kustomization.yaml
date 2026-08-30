@@ -1,19 +1,21 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# The e2e deployment of the provider.
+# The end-to-end deployment of the provider.
 #
-# It is the real base and the real generated RBAC — the point of deploying
-# in-cluster rather than running the binary from a terminal is that the suites
-# then exercise the manifests and the ServiceAccount permissions a cell would
-# actually get, so a missing grant fails a test instead of shipping.
+# The overlay uses the real base and the real generated role-based access
+# control (RBAC). Deploying in-cluster, rather than running the binary from a
+# terminal, makes the suites exercise the manifests and the ServiceAccount
+# permissions that a cell would get. A missing grant then fails a test rather
+# than shipping.
 #
-# Two things differ from config/overlays/dev, both because the environment
-# supplies them itself:
-#   - no kata_runtimeclass component: the tier installs the RuntimeClass, either
-#     kata-deploy's or the runc-handled stand-in.
-#   - no leader election: one replica, and a restart should come straight back
-#     rather than wait out a lease.
+# Two things differ from config/overlays/dev, because the environment supplies
+# both itself:
+#   - The overlay omits the kata_runtimeclass component, because the tier
+#     installs the RuntimeClass, either kata-deploy's or the runc-handled
+#     stand-in.
+#   - The overlay omits leader election, because the deployment runs one replica
+#     and a restart should return immediately rather than wait out a lease.
 namespace: kata-provider-system
 
 resources:

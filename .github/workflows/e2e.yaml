@@ -16,11 +16,12 @@ env:
   KIND_VERSION: v0.30.0
 
 jobs:
-  # The gate. Every behaviour the provider owns — which instances it claims, the
-  # instance it builds, the runtime it names, what it reports, suspend/resume,
-  # teardown ordering — is decided before any runtime executes anything, so it
-  # is provable without hardware virtualization. A RuntimeClass named as the
-  # provider expects but handled by runc is what makes that possible here.
+  # The gate. The provider decides every behavior it owns before any runtime
+  # executes anything: which instances it claims, the instance it builds, the
+  # runtime it names, what it reports, suspend and resume, and teardown
+  # ordering. A suite therefore proves all of them without hardware
+  # virtualization. A RuntimeClass that carries the name the provider expects,
+  # but that runc handles, is what makes that possible here.
   runc:
     name: portable suites (runc)
     runs-on: ubuntu-latest
@@ -34,10 +35,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # /usr/local/bin is not writable by the runner user, so placing a binary
-      # there needs sudo. Every other tool a run needs is either preinstalled on
-      # the runner (docker, kubectl, helm, jq) or installed into the
-      # repository's own bin/ by the Makefile and Taskfile.
+      # The runner user cannot write to /usr/local/bin, so placing a binary there
+      # needs sudo. The runner preinstalls every other tool that a run needs,
+      # namely docker, kubectl, helm, and jq, or the Makefile and the Taskfile
+      # install it into the repository's own bin directory.
       - name: Install kind
         run: |
           curl -sSfLo /tmp/kind \
@@ -60,18 +61,20 @@ jobs:
           kubectl --kubeconfig tmp/e2e/kata-provider-runc.kubeconfig \
             -n kata-provider-system logs deploy/kata-provider --tail=500 || true
 
-  # The Kata tier, non-blocking.
+  # The Kata tier, which reports but does not block a merge.
   #
-  # This does run here: GitHub's standard Linux runners expose /dev/kvm — it is
-  # what makes their hardware-accelerated Android emulator work — and the whole
-  # tier has been observed passing on one, booting real guests with their own
-  # kernel.
+  # The tier does run here. GitHub's standard Linux runners expose /dev/kvm,
+  # which is what makes their hardware-accelerated Android emulator work, and
+  # the whole tier has passed on such a runner, booting real guests with their
+  # own kernel.
   #
-  # It still reports rather than gates, because KVM on a hosted runner is not a
-  # documented, supported guarantee and can be withdrawn without notice. Gating
-  # the branch on it would mean a change in GitHub's fleet blocking every merge.
-  # So the device is checked for rather than assumed, and a runner without one
-  # says so plainly instead of failing somewhere deep inside a guest boot.
+  # The job still reports rather than gates, because KVM on a hosted runner is
+  # not a documented, supported guarantee and can be withdrawn without notice.
+  # KVM is the Linux Kernel-based Virtual Machine interface. Gating the branch
+  # on this job would let a change in GitHub's fleet block every merge. The job
+  # therefore checks for the device rather than assuming it, and a runner
+  # without the device says so plainly rather than failing deep inside a guest
+  # boot.
   kata:
     name: isolation suites (kata, non-blocking)
     runs-on: ubuntu-latest
@@ -89,7 +92,7 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # The runner user is not in the kvm group by default.
+          # The runner user does not belong to the kvm group by default.
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
             sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules

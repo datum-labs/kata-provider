@@ -1,9 +1,9 @@
 # An instance in the general-purpose class: an ordinary Linux container image,
 # sized from the instance type catalog.
 #
-# The runtime-class label is what a provider claims on. Compute stamps it from
-# spec.runtime.class; a test applies an Instance directly, with no compute
-# controllers running, so it stamps the label itself.
+# A provider claims on the runtime-class label. Compute stamps the label from
+# spec.runtime.class. A test applies an Instance directly, with no compute
+# controllers running, so the test stamps the label itself.
 apiVersion: compute.datumapis.com/v1alpha
 kind: Instance
 metadata:

@@ -1,5 +1,5 @@
-# A tenant asking, through their instance's metadata, for a kernel command line
-# argument in the guest that isolates them.
+# An instance whose metadata asks for a kernel command line argument in the
+# guest that isolates the tenant.
 apiVersion: compute.datumapis.com/v1alpha
 kind: Instance
 metadata:

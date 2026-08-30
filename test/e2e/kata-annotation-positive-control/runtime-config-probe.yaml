@@ -1,8 +1,8 @@
-# Reads the Kata runtime configuration off the node that will run the control.
+# Reads the Kata runtime configuration from the node that runs the control.
 #
-# It is an ordinary container, not an instance: it needs to see the host's copy
-# of the configuration, which is the thing the runtime will actually consult,
-# rather than a guest's view of anything.
+# The probe is an ordinary container, not an instance. The probe has to see the
+# host's copy of the configuration, which is the file that the runtime consults,
+# rather than a guest's view of it.
 apiVersion: v1
 kind: Pod
 metadata:

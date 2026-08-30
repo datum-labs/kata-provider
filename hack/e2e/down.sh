@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Delete the selected tier's cluster and its artefacts.
+# Delete the selected tier's cluster and its artifacts.
 #
-# Not part of a test run: the environment is reused between runs on purpose, and
-# tearing it down is an explicit choice.
+# A test run does not call this script. The environment is reused between runs
+# by design, so tearing it down is an explicit choice.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

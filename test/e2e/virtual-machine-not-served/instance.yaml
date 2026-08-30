@@ -1,10 +1,10 @@
-# A virtual machine instance: a customer-supplied OS image booted directly,
-# rather than containers run inside a platform-owned guest.
+# A virtual machine instance: a customer-supplied operating system image booted
+# directly, rather than containers run inside a platform-owned guest.
 #
-# The class does not declare that capability, so compute refuses it at apply
-# time. This one is applied straight to the cell, with no compute webhook in
-# front of it, which is the shape an instance created before that validation
-# existed would have.
+# The class does not declare that capability, so compute refuses the instance at
+# apply time. This instance is applied straight to the cell, with no compute
+# webhook in front of it. That is the shape of an instance created before the
+# validation existed.
 apiVersion: compute.datumapis.com/v1alpha
 kind: Instance
 metadata:
@@ -29,12 +29,13 @@ spec:
       network:
         name: default
 ---
-# A companion instance the provider does serve, in the same namespace.
+# A companion instance that the provider does serve, in the same namespace.
 #
-# The assertions below are about something NOT happening, and absence proves
-# nothing unless the provider was live and had reached this namespace. This
-# instance running is what makes that true; without it the suite would pass just
-# as happily against a provider that had crashed on startup.
+# The assertions in this suite are about something not happening, and absence
+# proves nothing unless the provider was live and had reached this namespace. A
+# running companion instance is what makes absence meaningful. Without the
+# companion, the suite would pass just as happily against a provider that had
+# crashed on startup.
 apiVersion: compute.datumapis.com/v1alpha
 kind: Instance
 metadata:

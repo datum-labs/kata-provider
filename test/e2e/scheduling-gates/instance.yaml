@@ -1,6 +1,6 @@
-# An instance compute has created but is not yet willing to have started —
-# quota not yet granted, placement not yet settled. The gate is compute's way of
-# saying so.
+# An instance that compute has created but is not yet willing to start. Quota is
+# not yet granted, and placement is not yet settled. The scheduling gate is how
+# compute says so.
 apiVersion: compute.datumapis.com/v1alpha
 kind: Instance
 metadata:
@@ -26,12 +26,13 @@ spec:
       network:
         name: default
 ---
-# A companion instance the provider does serve, in the same namespace.
+# A companion instance that the provider does serve, in the same namespace.
 #
-# The assertions below are about something NOT happening, and absence proves
-# nothing unless the provider was live and had reached this namespace. This
-# instance running is what makes that true; without it the suite would pass just
-# as happily against a provider that had crashed on startup.
+# The assertions in this suite are about something not happening, and absence
+# proves nothing unless the provider was live and had reached this namespace. A
+# running companion instance is what makes absence meaningful. Without the
+# companion, the suite would pass just as happily against a provider that had
+# crashed on startup.
 apiVersion: compute.datumapis.com/v1alpha
 kind: Instance
 metadata:

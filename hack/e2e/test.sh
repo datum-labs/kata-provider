@@ -10,23 +10,23 @@ if [[ ! -f "${E2E_KUBECONFIG}" ]]; then
 	exit 1
 fi
 
-# Tier selection is a label query, so the shared suites exist once and run in
-# both tiers rather than being copied per tier.
+# Tier selection is a label query. The shared suites therefore exist once and
+# run in both tiers, rather than being copied per tier.
 #
-#   portable  everything the provider itself decides, which is runtime
-#             independent and therefore assertable without a hypervisor.
-#   kata      the assertions that need a real guest. Excluded from the portable
-#             tier rather than rewritten to pass there.
+#   portable  Everything the provider itself decides. Those decisions are
+#             runtime independent, so a suite asserts them without a hypervisor.
+#   kata      The assertions that need a real guest. The portable tier excludes
+#             these suites rather than rewriting them to pass there.
 if [[ "${E2E_TIER}" == "runc" ]]; then
 	SELECTOR=(--selector tier=portable)
-	# The portable tier starts an instance in under a second, so suites overlap
-	# cheaply.
+	# The portable tier starts an instance in under a second, so overlapping
+	# suites costs little.
 	PARALLEL="${E2E_PARALLEL:-4}"
 else
 	SELECTOR=()
-	# Each Kata instance holds 2 GiB of guest RAM out of the node's /dev/shm for
-	# its lifetime. Running the suites one at a time keeps the node's memory
-	# from deciding whether a test passes.
+	# Each Kata instance holds 2 GiB of guest RAM in the node's /dev/shm for its
+	# lifetime. Running one suite at a time keeps the node's memory from deciding
+	# whether a test passes.
 	PARALLEL="${E2E_PARALLEL:-1}"
 fi
 

@@ -1,15 +1,16 @@
 # The portable tier's RuntimeClass.
 #
-# It carries the name the provider is configured to put on every instance Pod,
-# but resolves to runc. That is the whole trick behind the tier: the provider's
-# decisions — which instances it claims, the Pod it builds, the RuntimeClass it
-# names, where it schedules, what it reports — are identical whether the kubelet
-# hands the Pod to Kata or to runc, so they can be proven on a machine with no
-# hardware virtualization at all, including a GitHub runner.
+# The object carries the name that the provider puts on every instance Pod, but
+# it resolves to runc. That substitution is what the tier rests on. The
+# provider's decisions stay identical whether the kubelet hands the Pod to Kata
+# or to runc: which instances it claims, the Pod it builds, the RuntimeClass it
+# names, where it schedules, and what it reports. A machine with no hardware
+# virtualization can therefore prove all of them, including a GitHub runner.
 #
-# What it deliberately does NOT prove is isolation. An instance here shares the
-# node's kernel. The suites that assert on a real guest are labelled tier=kata
-# and are excluded from this tier rather than weakened to pass in it.
+# The tier deliberately does not prove isolation. An instance here shares the
+# node's kernel. The suites that assert on a real guest carry the label
+# tier=kata. The portable tier excludes those suites rather than weakening them
+# to pass in it.
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:

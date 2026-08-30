@@ -22,9 +22,9 @@ spec:
         name: default
 
 ---
-# Identical in every respect except the class it asks for. If the provider
-# claimed on workload shape instead of on class, nothing here would distinguish
-# the two.
+# Identical to the instance above in every respect except the class it asks for.
+# If the provider claimed on workload shape rather than on class, nothing here
+# would distinguish the two instances.
 apiVersion: compute.datumapis.com/v1alpha
 kind: Instance
 metadata:

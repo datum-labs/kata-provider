@@ -1,10 +1,11 @@
-# An instance whose metadata carries every kind of runtime configuration a
+# An instance whose metadata carries every kind of runtime configuration that a
 # tenant might try to smuggle through it.
 #
-# Instance metadata is tenant-writable — a customer can put anything here — and
-# Kata reads io.katacontainers.* Pod annotations as host-root configuration.
-# The values below are the real shapes: replace the hypervisor binary, take over
-# the guest init, turn off guest seccomp, redirect the OCI bundle path.
+# Instance metadata is tenant-writable, so a customer can put anything in it,
+# and Kata reads io.katacontainers.* Pod annotations as host-root configuration.
+# The values below are the real shapes. They replace the hypervisor binary, take
+# over the guest init process, turn off guest seccomp, and redirect the path of
+# the Open Container Initiative (OCI) bundle.
 apiVersion: compute.datumapis.com/v1alpha
 kind: Instance
 metadata:

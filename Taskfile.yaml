@@ -5,21 +5,22 @@ vars:
   IMG_TAG: 'dev'
   IMG: '{{.IMG_NAME}}:{{.IMG_TAG}}'
 
-  # chainsaw version used by the end-to-end suites
+  # The chainsaw version that the end-to-end suites run.
   CHAINSAW_VERSION: v0.2.15
   LOCALBIN: '{{.ROOT_DIR}}/bin'
   CHAINSAW: '{{.ROOT_DIR}}/bin/chainsaw'
 
 env:
-  # Which runtime actually executes an instance in the end-to-end environment.
+  # Which runtime executes an instance in the end-to-end environment.
   #
-  #   runc  the portable tier and the CI gate. A RuntimeClass named as the
-  #         provider expects, handled by runc, so it needs no hardware
-  #         virtualization and runs anywhere.
-  #   kata  the real tier. Kata Containers on a node with KVM, adding the
-  #         assertions that only mean something behind a hypervisor.
+  #   runc  The portable tier and the CI gate. A RuntimeClass carries the name
+  #         the provider expects, and runc handles it, so the tier needs no
+  #         hardware virtualization and runs anywhere.
+  #   kata  The real tier. Kata Containers runs on a node with KVM, the Linux
+  #         Kernel-based Virtual Machine interface. The tier adds the assertions
+  #         that only have meaning behind a hypervisor.
   #
-  # Select with `task e2e TIER=kata`.
+  # To select the Kata tier, run `task e2e TIER=kata`.
   E2E_TIER: '{{.TIER | default "runc"}}'
 
 tasks:

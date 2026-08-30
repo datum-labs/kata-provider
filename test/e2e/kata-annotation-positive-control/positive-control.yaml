@@ -1,10 +1,10 @@
 # The control: the same annotation, on a Pod created directly against the cell
 # rather than through an Instance.
 #
-# Nothing about this Pod goes through the provider, so nothing strips the
-# annotation, and Kata acts on it. It exists to demonstrate that the annotation
-# is a live channel into the hypervisor on this node — which is the only thing
-# that makes the negative result next to it meaningful.
+# This Pod does not pass through the provider, so nothing strips the annotation
+# and Kata acts on it. The Pod demonstrates that the annotation is a live
+# channel into the hypervisor on this node. That demonstration is the only thing
+# that makes the negative result beside it meaningful.
 apiVersion: v1
 kind: Pod
 metadata:
