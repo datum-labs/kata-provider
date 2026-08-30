@@ -1,21 +1,20 @@
-# Image URL to use all building/pushing image targets
+# The image URL that every image build target and push target uses.
 IMG ?= controller:latest
 
-# Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
+# Resolve the Go install path. The path is GOPATH/bin unless GOBIN is set.
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
 else
 GOBIN=$(shell go env GOBIN)
 endif
 
-# CONTAINER_TOOL defines the container tool to be used for building images.
-# Be aware that the target commands are only tested with Docker which is
-# scaffolded by default. However, you might want to replace it to use other
-# tools. (i.e. podman)
+# CONTAINER_TOOL names the container tool that builds images. The targets are
+# tested only with Docker, which the scaffolding sets by default. You can
+# replace the value with another tool, for example podman.
 CONTAINER_TOOL ?= docker
 
-# Setting SHELL to bash allows bash commands to be executed by recipes.
-# Options are set to exit when a recipe line exits non-zero or a piped command fails.
+# Set SHELL to bash so that recipes can run bash commands. The options exit when
+# a recipe line returns a non-zero status or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
@@ -24,15 +23,14 @@ all: build
 
 ##@ General
 
-# The help target prints out all targets with their descriptions organized
-# beneath their categories. The categories are represented by '##@' and the
-# target descriptions by '##'. The awk command is responsible for reading the
-# entire set of makefiles included in this invocation, looking for lines of the
-# file as xyz: ## something, and then pretty-format the target and help. Then,
-# if there's a line with ##@ something, that gets pretty-printed as a category.
-# More info on the usage of ANSI control characters for terminal formatting:
-# https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters
-# More info on the awk command:
+# The help target prints every target with its description, organized beneath
+# its category. A '##@' comment marks a category, and a '##' comment marks a
+# target description. The awk command reads every makefile in this invocation,
+# finds lines of the form `xyz: ## something`, and formats the target and its
+# help text. A line of the form `##@ something` prints as a category heading.
+# For more information about ANSI control characters for terminal formatting,
+# see https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters
+# For more information about the awk command, see
 # http://linuxcommand.org/lc3_adv_awk.php
 
 .PHONY: help
@@ -62,7 +60,6 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet ## Run tests.
 	go test ./... -coverprofile cover.out
 
-# Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
@@ -82,9 +79,10 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go -health-probe-bind-address 0 \
 		--server-config ./config/base/manager/config.yaml
 
-# If you wish to build the manager image targeting other platforms you can use the --platform flag.
-# (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
-# More info: https://docs.docker.com/develop/develop-images/build_enhancements/
+# To build the manager image for another platform, use the --platform flag, for
+# example `docker build --platform linux/arm64`. Docker BuildKit must be enabled
+# first. For more information, see
+# https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
@@ -93,12 +91,13 @@ docker-build: ## Build docker image with the manager.
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
 
-# PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
-# architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
-# - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
-# - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-# - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
-# To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
+# PLATFORMS names the target platforms that the manager image is built for, so
+# that the image supports multiple architectures. For example, run
+# `make docker-buildx IMG=myregistry/myoperator:0.0.1`. To use this option, you
+# need to:
+# - Run docker buildx. For more information, see https://docs.docker.com/build/buildx/
+# - Enable BuildKit. For more information, see https://docs.docker.com/develop/develop-images/build_enhancements/
+# - Push the image to your registry. An invalid IMG=<myregistry/image:<tag>> value fails the export.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
@@ -141,7 +140,7 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 
 ##@ Dependencies
 
-## Location to install dependencies to
+## The directory that dependencies install into.
 LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
@@ -157,7 +156,7 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 KUSTOMIZE_VERSION ?= v5.4.3
 CONTROLLER_TOOLS_VERSION ?= v0.17.1
 DEFAULTER_GEN_VERSION ?= v0.33.2
-GOLANGCI_LINT_VERSION ?= v2.1.5
+GOLANGCI_LINT_VERSION ?= v2.9.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -179,10 +178,11 @@ golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
-# go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
-# $1 - target path with name of binary
-# $2 - package url which can be installed
-# $3 - specific version of package
+# go-install-tool runs 'go install' for a package, under a custom target path and
+# binary name, when that binary does not already exist.
+# $1 - target path, including the name of the binary
+# $2 - URL of the package to install
+# $3 - version of the package
 define go-install-tool
 @[ -f "$(1)-$(3)" ] || { \
 set -e; \

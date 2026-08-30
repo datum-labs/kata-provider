@@ -1,0 +1,26 @@
+# An instance in the general-purpose class: an ordinary Linux container image,
+# sized from the instance type catalog.
+#
+# A provider claims on the runtime-class label. Compute stamps the label from
+# spec.runtime.class. A test applies an Instance directly, with no compute
+# controllers running, so the test stamps the label itself.
+apiVersion: compute.datumapis.com/v1alpha
+kind: Instance
+metadata:
+  name: realized
+  labels:
+    compute.datumapis.com/runtime-class: general-purpose
+spec:
+  runtime:
+    class: general-purpose
+    resources:
+      instanceType: datumcloud/d1-standard-2
+    sandbox:
+      containers:
+        - name: app
+          image: docker.io/library/busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+  networkInterfaces:
+    - name: eth0
+      network:
+        name: default

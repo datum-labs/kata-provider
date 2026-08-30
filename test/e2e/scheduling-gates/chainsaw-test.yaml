@@ -1,0 +1,100 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: scheduling-gates
+  labels:
+    tier: portable
+spec:
+  description: |
+    Proves that a gated instance is not started, and that clearing the gate
+    starts it.
+
+    A scheduling gate is how compute holds an instance back until something it
+    owns is settled — quota granted, placement chosen. A provider that started
+    the instance anyway would run and bill capacity the platform had not agreed
+    to give, and would do it in the window where a customer is most likely to be
+    over quota.
+
+    The finalizer is asserted absent while the gate is held. The provider takes
+    it only once it has decided an instance is its to run, so an instance it has
+    not started is never one it has to be waited on to tear down.
+
+  template: true
+
+  steps:
+    - name: create-gated-instance
+      description: Create an instance compute is holding back, alongside one it is not.
+      try:
+        - apply:
+            file: instance.yaml
+
+    - name: assert-provider-is-live
+      description: |
+        The companion instance is running, so the provider is up and has
+        processed this namespace. Every "nothing happened" assertion below rests
+        on this.
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: canary
+              status:
+                phase: Running
+
+    - name: assert-not-started
+      description: A gated instance is not placed.
+      try:
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gated
+
+    - name: assert-not-held
+      description: |
+        Nor is it held. Checked after the absence window above, so the provider
+        has had the same opportunity to act on this instance as it would have
+        had on an ungated one.
+      try:
+        - script:
+            content: |
+              held=$(kubectl -n "$NAMESPACE" get instance gated \
+                -o jsonpath='{.metadata.finalizers}')
+              if [ -n "$held" ]; then
+                echo "provider holds finalizers on a gated instance: $held" >&2
+                exit 1
+              fi
+              echo "gated instance is unstarted and unheld"
+
+    - name: clear-the-gate
+      description: |
+        Compute is satisfied and clears the gate. That is a spec write, which is
+        what re-triggers the provider — nothing here polls for it.
+      try:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" patch instance gated --type=merge \
+                -p '{"spec":{"controller":{"templateHash":"e2e-scheduling-gates","schedulingGates":null}}}'
+
+    - name: assert-started
+      description: The instance starts, and only now is it held for teardown.
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gated
+              status:
+                phase: Running
+        - assert:
+            resource:
+              apiVersion: compute.datumapis.com/v1alpha
+              kind: Instance
+              metadata:
+                name: gated
+                finalizers:
+                  - kata.datumapis.com/finalizer

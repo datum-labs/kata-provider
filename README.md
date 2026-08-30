@@ -38,8 +38,10 @@ cluster it runs in must already provide:
    Datum's runtime class: it is the node-level binding that points the kubelet
    at Kata. `kata-deploy` creates it; where the runtime is installed by other
    means, enable the `kata_runtimeclass` component. The handler defaults to
-   `kata-qemu` and is configurable, because `kata-qemu` and `kata-clh` are a
-   deployment choice.
+   `kata-clh`, Cloud Hypervisor, which reserves far less memory per instance
+   than QEMU and so raises instance density. The handler stays configurable,
+   because it is a deployment choice — and an arm64 cluster must set
+   `kata-qemu`, since Kata 4.x builds Cloud Hypervisor for x86_64 only.
 3. **Labelled nodes.** Instance Pods select `katacontainers.io/kata-runtime=true`,
    which `kata-deploy` applies to every node it has installed the runtime on.
    Override the selector, and add tolerations, in the provider's config.
@@ -84,3 +86,88 @@ outcome: this provider will not fall back to a shared kernel.
 make test    # unit tests
 make lint
 ```
+
+### End-to-end
+
+The end-to-end suites run the provider in a real cluster and assert on what a
+customer and an operator would see: an instance that starts behind the runtime
+its class promised, at the size it was sold, reachable at an address, stopped
+when suspended, and never reported gone while it is still running.
+
+They run in two tiers, and the tiers share their suites rather than duplicating
+them.
+
+| | `runc` | `kata` |
+| --- | --- | --- |
+| What executes an instance | A `RuntimeClass` named as the provider expects, handled by runc | Real Kata Containers |
+| Needs hardware virtualization | No | Yes |
+| Runs in CI | Yes — this is the gate | Yes, but non-blocking |
+| Proves | Everything the provider decides | The above, plus isolation |
+
+The portable tier is not a weaker version of the same test. Which instances the
+provider claims, the instance it builds, the runtime class it names, where it
+schedules, what it strips, what it reports, and the order it tears things down
+in are all decided before any runtime executes anything, so they are provable
+without a hypervisor — on any laptop, and on a GitHub runner. What genuinely
+needs a guest is labelled `tier=kata` and is excluded from the portable tier
+rather than softened to pass in it.
+
+```bash
+task e2e                # portable tier: create or reuse the cluster, deploy, run
+task e2e TIER=kata      # every suite, against real Kata Containers
+task e2e:test           # just the suites, against an environment already up
+task e2e:down           # delete that tier's cluster
+```
+
+Each step is create-or-reuse, so the normal loop is `task e2e` again rather than
+a cluster rebuild. The compute CRDs are installed from the exact module version
+in `go.mod`, not from a branch, so the cluster's schema and the compiled API
+cannot disagree. The provider is deployed in-cluster from `test/e2e/deploy`,
+which is the real base and the real generated RBAC — a missing grant fails a
+test here instead of shipping.
+
+`.status.Ready` and `.status.QuotaGranted` stay Pending throughout, and the
+suites assert that. Both belong to compute, no compute controller runs in this
+environment, and a provider writing them would be a bug rather than a
+convenience.
+
+#### Prerequisite for the Kata tier
+
+The Kata tier needs a Linux host with KVM. On a Mac that means a VM with nested
+virtualization, which is a dedicated colima profile — never the default one:
+
+```bash
+colima start kata --vm-type vz --nested-virtualization \
+  --cpu 8 --memory 16 --disk 60 --runtime docker
+```
+
+The e2e scripts find that profile's socket themselves and pass it through the
+environment, so they change neither your `docker context` nor your
+`~/.kube/config`.
+
+The tier installs Cloud Hypervisor, the hypervisor the provider targets by
+default, and the suites assert that instances name its RuntimeClass. Kata 4.x
+builds the Cloud Hypervisor shim for x86_64 only, so an arm64 host — an Apple
+silicon Mac, for example — runs the tier under QEMU instead:
+
+```bash
+task e2e TIER=kata E2E_KATA_SHIM=qemu
+```
+
+That variable picks the shim `kata-deploy` installs, the RuntimeClass name the
+suites assert on, and the handler the provider is configured with, together. It
+is the same override an arm64 cell makes in the provider's configuration.
+
+CI runs this tier too, on the KVM that GitHub's standard Linux runners expose.
+It is kept non-blocking anyway: that KVM is not a documented guarantee, and a
+change in GitHub's fleet should not be able to block every merge.
+
+Two things about that environment are worth knowing, because both are fatal and
+neither reports itself clearly. Kata's arm64 defaults ask QEMU for a performance
+monitoring unit the guest CPU does not have under nested virtualization, and a
+container's 64 MB `/dev/shm` is too small to back a guest's RAM — the first
+fails with a missing QEMU property, the second with what looks like a KVM fault.
+Both are reapplied to the node on every `task e2e:up`, in
+`hack/e2e/kata-workarounds.sh`, because both are lost whenever the thing that
+owns them is rebuilt. The first applies to QEMU alone, so it is skipped where
+the node runs Cloud Hypervisor.

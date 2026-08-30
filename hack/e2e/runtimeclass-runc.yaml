@@ -1,0 +1,22 @@
+# The portable tier's RuntimeClass.
+#
+# The object carries the name that the provider puts on every instance Pod, but
+# it resolves to runc. up.sh substitutes the name, because the provider names
+# its RuntimeClass after the hypervisor the deployment chose. That substitution is what the tier rests on. The
+# provider's decisions stay identical whether the kubelet hands the Pod to Kata
+# or to runc: which instances it claims, the Pod it builds, the RuntimeClass it
+# names, where it schedules, and what it reports. A machine with no hardware
+# virtualization can therefore prove all of them, including a GitHub runner.
+#
+# The tier deliberately does not prove isolation. An instance here shares the
+# node's kernel. The suites that assert on a real guest carry the label
+# tier=kata. The portable tier excludes those suites rather than weakening them
+# to pass in it.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: "@RUNTIME_CLASS@"
+handler: runc
+scheduling:
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"

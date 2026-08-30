@@ -1,0 +1,55 @@
+# An instance that compute has created but is not yet willing to start. Quota is
+# not yet granted, and placement is not yet settled. The scheduling gate is how
+# compute says so.
+apiVersion: compute.datumapis.com/v1alpha
+kind: Instance
+metadata:
+  name: gated
+  labels:
+    compute.datumapis.com/runtime-class: general-purpose
+spec:
+  runtime:
+    class: general-purpose
+    resources:
+      instanceType: datumcloud/d1-standard-2
+    sandbox:
+      containers:
+        - name: app
+          image: docker.io/library/busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+  controller:
+    templateHash: e2e-scheduling-gates
+    schedulingGates:
+      - name: compute.datumapis.com/quota
+  networkInterfaces:
+    - name: eth0
+      network:
+        name: default
+---
+# A companion instance that the provider does serve, in the same namespace.
+#
+# The assertions in this suite are about something not happening, and absence
+# proves nothing unless the provider was live and had reached this namespace. A
+# running companion instance is what makes absence meaningful. Without the
+# companion, the suite would pass just as happily against a provider that had
+# crashed on startup.
+apiVersion: compute.datumapis.com/v1alpha
+kind: Instance
+metadata:
+  name: canary
+  labels:
+    compute.datumapis.com/runtime-class: general-purpose
+spec:
+  runtime:
+    class: general-purpose
+    resources:
+      instanceType: datumcloud/d1-standard-2
+    sandbox:
+      containers:
+        - name: app
+          image: docker.io/library/busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+  networkInterfaces:
+    - name: eth0
+      network:
+        name: default

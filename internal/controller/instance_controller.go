@@ -40,12 +40,17 @@ const (
 	// DefaultRuntimeHandler is the Kubernetes RuntimeClass the provider targets
 	// when a deployment names none.
 	//
-	// kata-qemu is the handler kata-deploy installs everywhere and the one the
-	// project tests most broadly: it supports both x86_64 and arm64 and the
-	// widest device model. kata-clh starts faster but is narrower in what it
-	// can attach, so a site trades up to it deliberately rather than by
-	// default.
-	DefaultRuntimeHandler = "kata-qemu"
+	// kata-clh runs each guest under Cloud Hypervisor, which reserves far less
+	// memory per instance than QEMU does — kata-deploy declares 130Mi of pod
+	// overhead for kata-clh against 320Mi for kata-qemu. That overhead sets how
+	// many instances a node holds, and therefore what the general-purpose tier
+	// costs to run. Cloud Hypervisor also boots a guest faster, though pulling
+	// the image dominates the time a tenant waits.
+	//
+	// Cloud Hypervisor is x86_64 only in Kata 4.x. An arm64 deployment must set
+	// RuntimeHandler to kata-qemu, because kata-deploy builds no arm64 Cloud
+	// Hypervisor shim.
+	DefaultRuntimeHandler = "kata-clh"
 
 	// kataAnnotationPrefix is the annotation namespace Kata reads runtime
 	// configuration from. Nothing under it may originate with a tenant; see

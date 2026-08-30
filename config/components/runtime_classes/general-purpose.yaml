@@ -1,0 +1,42 @@
+# Compute owns the RuntimeClass kind and the contract it publishes. Each
+# provider registers the classes it serves from its own repository, the way a
+# Gateway API implementation registers its own GatewayClass. Adding, retiring,
+# or correcting a class this provider serves is a change here, not a change to
+# compute.
+#
+# Every field below is a promise to a customer, so the class declares only what
+# a Kata-backed instance delivers today. internal/controller/capabilities.go is
+# the same declaration in code, and the provider reports through the Accepted
+# condition when the two disagree. Keep them in step.
+apiVersion: compute.datumapis.com/v1alpha
+kind: RuntimeClass
+metadata:
+  name: general-purpose
+spec:
+  controllerName: compute.datumapis.com/kata-provider
+  displayName: General purpose
+  description: >-
+    Runs arbitrary Linux container images. Slower to start and more expensive
+    per instance than the fast path, but an image that runs elsewhere runs here.
+  isolation:
+    boundary: virtual-machine
+    description: >-
+      Each instance runs in its own lightweight virtual machine with its own
+      kernel. No kernel is shared between tenants.
+  capabilities:
+    features:
+      - sandboxRuntime
+      - configMapVolumes
+      - secretVolumes
+      - envFrom
+      - imagePullSecrets
+    compatibility: >-
+      Runs standard Linux container images without modification, including
+      images that need a full filesystem, dynamic linking, or credentials to
+      pull. Storage lives with the instance: durable disks and raw device
+      attachments are not offered yet, and neither is booting a
+      customer-supplied virtual machine image.
+  lifecycle:
+    description: >-
+      Instances take several seconds to start, dominated by booting a kernel and
+      pulling the image. Suspend, resume, and snapshot are not offered yet.

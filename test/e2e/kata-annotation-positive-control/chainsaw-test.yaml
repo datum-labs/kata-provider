@@ -1,0 +1,159 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: kata-annotation-positive-control
+  labels:
+    tier: kata
+spec:
+  description: |
+    Proves that the annotation the provider strips is one that would otherwise
+    have worked.
+
+    The portable tier already asserts that a tenant's io.katacontainers.*
+    annotations never reach the backing instance. On its own that is a weak
+    result: a test that only ever checks for absence passes just as happily
+    against a runtime that ignores the annotation entirely, and would keep
+    passing if the defense were removed on a node where nothing acts on it.
+
+    So this suite runs both halves side by side on the same node, with the same
+    annotation key:
+
+      - A Pod created directly against the cell carries the annotation into the
+        guest: its marker appears on the guest kernel command line. Kata ships
+        kernel_params in its default enable_annotations allow-list, so this is
+        not a contrived configuration — it is the channel as an operator would
+        find it.
+      - An instance whose customer asked for the same thing through Instance
+        metadata does not. The provider removed it, so the marker is absent
+        from a guest that demonstrably would have accepted it.
+
+    The pair is the assertion. Either half alone proves nothing.
+
+    And the pair itself has a precondition. The control only demonstrates
+    anything while the runtime still honours the annotation, which it does
+    because kernel_params is in Kata's default enable_annotations allow-list. If
+    a future release narrows that default, the control stops reaching the guest,
+    the tenant's marker is absent for a reason that has nothing to do with this
+    provider, and a suite that only looked for absence would report a pass while
+    proving nothing at all. So the allow-list is asserted first, by name, and a
+    change to it fails this suite loudly instead of quietly hollowing it out.
+
+  template: true
+
+  steps:
+    - name: assert-the-runtime-still-honours-the-annotation
+      description: |
+        The node's runtime configuration still allows the annotation the control
+        depends on. Checked before anything boots, so the cheap failure happens
+        first and names its own cause.
+      try:
+        - apply:
+            file: runtime-config-probe.yaml
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: runtime-config-probe
+              status:
+                phase: Succeeded
+        - script:
+            content: |
+              allowlist=$(kubectl -n "$NAMESPACE" logs runtime-config-probe)
+              case "$allowlist" in
+                *kernel_params*)
+                  echo "runtime allow-list still honours kernel_params: $allowlist"
+                  ;;
+                *)
+                  echo "PRECONDITION FAILED — this suite can no longer prove anything." >&2
+                  echo "" >&2
+                  echo "The runtime no longer accepts the kernel_params annotation:" >&2
+                  echo "  $allowlist" >&2
+                  echo "" >&2
+                  echo "The control below depends on that annotation reaching the guest." >&2
+                  echo "Without it the tenant's marker would be absent because the runtime" >&2
+                  echo "ignored it, not because the provider stripped it — so the security" >&2
+                  echo "assertion would invert into a tautology and still report a pass." >&2
+                  echo "" >&2
+                  echo "Fix the control — find an annotation the runtime does honour and" >&2
+                  echo "use that — rather than deleting this check." >&2
+                  exit 1
+                  ;;
+              esac
+
+    - name: create-both
+      description: |
+        The tenant's instance and the directly-created control, together, so
+        they run on the same node under the same runtime configuration.
+      try:
+        - apply:
+            file: instance.yaml
+        - apply:
+            file: positive-control.yaml
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: tenant-request
+              status:
+                phase: Running
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: annotation-control
+              status:
+                phase: Running
+
+    - name: assert-the-channel-is-live
+      description: |
+        The control's marker reached the guest kernel command line.
+
+        This step is what stops the suite going green for the wrong reason. The
+        assertion below is a negative — a marker that is absent — and a negative
+        passes just as happily against a runtime that ignored the annotation as
+        against a provider that stripped it. The likeliest way that happens is a
+        future Kata release narrowing its default enable_annotations, which
+        would silently turn the whole suite into a tautology. So the channel is
+        demonstrated live first, and if it is not, the suite fails and says why
+        rather than reporting a pass.
+      try:
+        - script:
+            content: |
+              cmdline=$(kubectl exec -n "$NAMESPACE" annotation-control -- cat /proc/cmdline)
+              case "$cmdline" in
+                *kata_e2e_control_marker=1*)
+                  echo "control annotation reached the guest command line"
+                  ;;
+                *)
+                  echo "the annotation did NOT reach the guest even without the provider in the way." >&2
+                  echo "This node cannot demonstrate the defense, so the assertion that follows" >&2
+                  echo "would prove nothing and the suite fails here instead." >&2
+                  echo "Most likely cause: kernel_params is no longer in this runtime's" >&2
+                  echo "enable_annotations allow-list. Check it on the node with:" >&2
+                  echo "  grep enable_annotations /opt/kata/share/defaults/kata-containers/configuration-qemu.toml" >&2
+                  echo "guest command line: $cmdline" >&2
+                  exit 1
+                  ;;
+              esac
+
+    - name: assert-the-tenant-is-off-the-channel
+      description: |
+        The tenant's marker is not on their guest's command line, on the same
+        node where the control's marker is on its own.
+      try:
+        - script:
+            content: |
+              cmdline=$(kubectl exec -n "$NAMESPACE" tenant-request -- cat /proc/cmdline)
+              case "$cmdline" in
+                *kata_e2e_tenant_marker=1*)
+                  echo "a tenant-supplied value reached the hypervisor configuration" >&2
+                  echo "guest command line: $cmdline" >&2
+                  exit 1
+                  ;;
+                *)
+                  echo "tenant annotation did not reach the guest command line"
+                  ;;
+              esac

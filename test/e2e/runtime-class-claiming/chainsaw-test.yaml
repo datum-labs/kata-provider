@@ -1,0 +1,82 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: runtime-class-claiming
+  labels:
+    tier: portable
+spec:
+  description: |
+    Proves that this provider serves its own runtime class and nothing else.
+
+    A cell can host more than one class at a time, each served by a separately
+    released provider. The classes have to partition the cell's instances
+    exactly: an instance claimed by both providers is run twice and billed
+    twice, and an instance claimed by neither never starts and never says why.
+    Neither failure appears in status, which is why it is asserted here rather
+    than left to inspection.
+
+    Two instances are created that differ only in the class they ask for. The
+    general-purpose one is realized. The unikernel one is not touched at all —
+    no backing instance, and no finalizer, because a provider that never
+    claimed an instance must not hold up its deletion either.
+
+    This also covers the informer scope behind the claim. The class selector is
+    applied to the manager's cache, not as an event filter, so the provider
+    never lists or stores the other class's instances. A predicate would drop
+    the events but keep the objects, and the memory that costs has crash-looped
+    a provider in this system — at which point delete reconciles stop running
+    and instances wedge in Terminating.
+
+  template: true
+
+  steps:
+    - name: create-instances
+      description: One instance per class, side by side.
+      try:
+        - apply:
+            file: instances.yaml
+
+    - name: assert-own-class-is-realized
+      description: The instance in this provider's class runs.
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: claimed
+                labels:
+                  managed-by: kata-provider
+              status:
+                phase: Running
+
+    - name: assert-other-class-is-untouched
+      description: |
+        No backing instance was created for the other class. Asserted after the
+        claimed one is already running, so the provider has demonstrably
+        processed the events for this namespace and absence means "not claimed"
+        rather than "not yet reconciled".
+      try:
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: other-class
+
+    - name: assert-other-class-is-not-held
+      description: |
+        The provider holds no finalizer on an instance it does not serve. It is
+        the class's own provider that must gate that instance's deletion; a
+        finalizer from this one would wedge a delete forever, since nothing here
+        will ever tear it down.
+      try:
+        - script:
+            content: |
+              held=$(kubectl -n "$NAMESPACE" get instance other-class \
+                -o jsonpath='{.metadata.finalizers}')
+              if [ -n "$held" ]; then
+                echo "provider holds finalizers on another class's instance: $held" >&2
+                exit 1
+              fi
+              echo "instance of another class is unclaimed and unheld"
