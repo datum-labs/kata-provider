@@ -5,6 +5,24 @@ vars:
   IMG_TAG: 'dev'
   IMG: '{{.IMG_NAME}}:{{.IMG_TAG}}'
 
+  # The chainsaw version that the end-to-end suites run.
+  CHAINSAW_VERSION: v0.2.15
+  LOCALBIN: '{{.ROOT_DIR}}/bin'
+  CHAINSAW: '{{.ROOT_DIR}}/bin/chainsaw'
+
+env:
+  # Which runtime executes an instance in the end-to-end environment.
+  #
+  #   runc  The portable tier and the CI gate. A RuntimeClass carries the name
+  #         the provider expects, and runc handles it, so the tier needs no
+  #         hardware virtualization and runs anywhere.
+  #   kata  The real tier. Kata Containers runs on a node with KVM, the Linux
+  #         Kernel-based Virtual Machine interface. The tier adds the assertions
+  #         that only have meaning behind a hypervisor.
+  #
+  # To select the Kata tier, run `task e2e TIER=kata`.
+  E2E_TIER: '{{.TIER | default "runc"}}'
+
 tasks:
   default:
     cmds:
@@ -28,3 +46,57 @@ tasks:
     silent: true
     cmds:
       - make deploy IMG={{.IMG}}
+
+  # ════════════════════════════════════════════════════════════════════════
+  #  End-to-end suites
+  # ════════════════════════════════════════════════════════════════════════
+
+  e2e:
+    desc: 'Bring up the environment, deploy the provider, and run the suites (TIER=runc|kata)'
+    cmds:
+      - task: e2e:up
+      - task: e2e:deploy
+      - task: e2e:test
+
+  e2e:up:
+    desc: 'Create or reuse the tier''s Kind cluster and install its runtime and the compute CRDs'
+    deps: [kustomize]
+    cmds:
+      - ./hack/e2e/up.sh
+
+  e2e:deploy:
+    desc: 'Build the provider from the working tree and deploy it into the tier''s cluster'
+    deps: [kustomize]
+    cmds:
+      - ./hack/e2e/deploy.sh
+
+  e2e:test:
+    desc: 'Run the suites for the tier (extra chainsaw flags after --)'
+    deps: [e2e:chainsaw]
+    cmds:
+      - ./hack/e2e/test.sh {{.CLI_ARGS}}
+
+  e2e:down:
+    desc: 'Delete the tier''s Kind cluster'
+    cmds:
+      - ./hack/e2e/down.sh
+
+  e2e:chainsaw:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOCALBIN}}
+      - |
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+        curl -sSfL "https://github.com/kyverno/chainsaw/releases/download/{{.CHAINSAW_VERSION}}/chainsaw_${OS}_${ARCH}.tar.gz" \
+          | tar -xz -C {{.LOCALBIN}} chainsaw
+        chmod +x {{.CHAINSAW}}
+    status:
+      - test -f {{.CHAINSAW}}
+
+  kustomize:
+    internal: true
+    cmds:
+      - make kustomize
+    status:
+      - test -f {{.LOCALBIN}}/kustomize

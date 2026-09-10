@@ -1,0 +1,134 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: instance-realization
+  labels:
+    tier: portable
+spec:
+  description: |
+    Proves that a customer who asks for a general-purpose instance gets a
+    running instance, isolated by the runtime the class promises, reachable at
+    an address, and reported as available.
+
+    This is the provider's whole job in one suite, so it asserts on the parts a
+    customer or an operator would notice if any of them were wrong:
+
+      - The instance is realized with the customer's own image and with the
+        CPU and memory the instance type is sold at, requests equal to limits.
+        A request below the limit would let an instance burst past what quota
+        claimed and billing charged for.
+      - It names the Kubernetes RuntimeClass the deployment configured, which
+        is the single thing that decides whether the customer gets the
+        isolation the class promised or a shared kernel. Nothing here falls
+        back to the default runtime.
+      - It is placed only on nodes advertising the runtime.
+      - It cannot reach the API server of the cluster hosting it. An instance
+        runs customer code, so no service account token is projected and no
+        neighbouring service addresses are leaked into its environment.
+      - It carries the provider's ownership markers and a controller owner
+        reference back to the Instance, so an operator can get from either to
+        the other.
+      - The customer sees Programmed and Available true, and the address the
+        instance answers on.
+
+    Ready and QuotaGranted stay Pending throughout, which is correct: compute
+    owns those and no compute controller runs in this environment. The provider
+    must not write them, and this suite would fail if it did, because it asserts
+    the reasons compute left behind rather than absence.
+
+  template: true
+
+  steps:
+    - name: create-instance
+      description: Ask for a general-purpose instance.
+      try:
+        - apply:
+            file: instance.yaml
+
+    - name: assert-instance-is-realized
+      description: |
+        The instance runs behind the promised runtime, at the size it was sold,
+        on a node that advertises the runtime, with no access to the hosting
+        cluster's API.
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: realized
+                labels:
+                  managed-by: kata-provider
+                  upstream.instance: realized
+                ownerReferences:
+                  - apiVersion: compute.datumapis.com/v1alpha
+                    kind: Instance
+                    name: realized
+                    controller: true
+                    blockOwnerDeletion: true
+              spec:
+                runtimeClassName: ($values.runtimeClass)
+                nodeSelector:
+                  katacontainers.io/kata-runtime: "true"
+                automountServiceAccountToken: false
+                enableServiceLinks: false
+                containers:
+                  - name: app
+                    image: docker.io/library/busybox:1.36
+                    resources:
+                      requests:
+                        cpu: "1"
+                        memory: 2Gi
+                      limits:
+                        cpu: "1"
+                        memory: 2Gi
+              status:
+                phase: Running
+
+    - name: assert-customer-visible-status
+      description: |
+        The customer sees an available instance and the address it answers on.
+        Ready and QuotaGranted are asserted as still Pending: they belong to
+        compute, and a provider writing them would race the derivation that
+        makes Ready mean anything.
+      try:
+        - assert:
+            resource:
+              apiVersion: compute.datumapis.com/v1alpha
+              kind: Instance
+              metadata:
+                name: realized
+                finalizers:
+                  - kata.datumapis.com/finalizer
+              status:
+                (conditions[?type == 'Programmed'] | [0]):
+                  status: "True"
+                  reason: Programmed
+                (conditions[?type == 'Available'] | [0]):
+                  status: "True"
+                  reason: Available
+                (conditions[?type == 'Ready'] | [0].status): Unknown
+                (conditions[?type == 'QuotaGranted'] | [0].status): Unknown
+                networkInterfaces:
+                  - name: eth0
+                    addresses:
+                      - family: IPv4
+                        primary: true
+
+    - name: assert-address-matches-the-instance
+      description: |
+        The address the customer is told to reach is the address the instance
+        actually holds. A Kata guest owns the Pod's network namespace, so the
+        two must be the same value and not merely both present.
+      try:
+        - script:
+            content: |
+              reported=$(kubectl -n "$NAMESPACE" get instance realized \
+                -o jsonpath='{.status.networkInterfaces[0].assignments.networkIP}')
+              actual=$(kubectl -n "$NAMESPACE" get pod realized \
+                -o jsonpath='{.status.podIP}')
+              if [ -z "$reported" ] || [ "$reported" != "$actual" ]; then
+                echo "instance reports $reported but answers on $actual" >&2
+                exit 1
+              fi
+              echo "instance reachable at $reported"

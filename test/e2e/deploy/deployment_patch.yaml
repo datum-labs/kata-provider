@@ -1,0 +1,17 @@
+# A single-node Kind cluster runs everything on the control-plane node, which
+# carries the control-plane taint. The scripts side-load the image rather than
+# publishing it, so the kubelet must never pull the image.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kata-provider
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: manager
+          imagePullPolicy: IfNotPresent

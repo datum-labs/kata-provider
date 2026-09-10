@@ -1,0 +1,129 @@
+name: e2e
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.30.0
+
+jobs:
+  # The gate. The provider decides every behavior it owns before any runtime
+  # executes anything: which instances it claims, the instance it builds, the
+  # runtime it names, what it reports, suspend and resume, and teardown
+  # ordering. A suite therefore proves all of them without hardware
+  # virtualization. A RuntimeClass that carries the name the provider expects,
+  # but that runc handles, is what makes that possible here.
+  runc:
+    name: portable suites (runc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The runner user cannot write to /usr/local/bin, so placing a binary there
+      # needs sudo. The runner preinstalls every other tool that a run needs,
+      # namely docker, kubectl, helm, and jq, or the Makefile and the Taskfile
+      # install it into the repository's own bin directory.
+      - name: Install kind
+        run: |
+          curl -sSfLo /tmp/kind \
+            "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x /tmp/kind
+          sudo mv /tmp/kind /usr/local/bin/kind
+          kind version
+
+      - uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run the portable suites
+        run: task e2e TIER=runc
+
+      - name: Provider logs on failure
+        if: failure()
+        run: |
+          kubectl --kubeconfig tmp/e2e/kata-provider-runc.kubeconfig \
+            -n kata-provider-system logs deploy/kata-provider --tail=500 || true
+
+  # The Kata tier, which reports but does not block a merge.
+  #
+  # The tier does run here. GitHub's standard Linux runners expose /dev/kvm,
+  # which is what makes their hardware-accelerated Android emulator work, and
+  # the whole tier has passed on such a runner, booting real guests with their
+  # own kernel.
+  #
+  # The runner is x86_64, so the tier installs Cloud Hypervisor here, which is
+  # the hypervisor the provider targets by default. Kata builds that shim for
+  # x86_64 only.
+  #
+  # The job still reports rather than gates, because KVM on a hosted runner is
+  # not a documented, supported guarantee and can be withdrawn without notice.
+  # KVM is the Linux Kernel-based Virtual Machine interface. Gating the branch
+  # on this job would let a change in GitHub's fleet block every merge. The job
+  # therefore checks for the device rather than assuming it, and a runner
+  # without the device says so plainly rather than failing deep inside a guest
+  # boot.
+  kata:
+    name: isolation suites (kata, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check the runner can run a hypervisor
+        id: kvm
+        run: |
+          if [ ! -e /dev/kvm ]; then
+            echo "this runner has no /dev/kvm; the Kata tier cannot run here"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The runner user does not belong to the kvm group by default.
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v6
+        if: steps.kvm.outputs.available == 'true'
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install kind
+        if: steps.kvm.outputs.available == 'true'
+        run: |
+          curl -sSfLo /tmp/kind \
+            "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x /tmp/kind
+          sudo mv /tmp/kind /usr/local/bin/kind
+          kind version
+
+      - uses: arduino/setup-task@v2
+        if: steps.kvm.outputs.available == 'true'
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run every suite against real Kata Containers on Cloud Hypervisor
+        if: steps.kvm.outputs.available == 'true'
+        run: task e2e TIER=kata

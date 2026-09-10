@@ -1,0 +1,90 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: deletion-teardown
+  labels:
+    tier: portable
+spec:
+  description: |
+    Proves that an instance is never reported gone while it is still running.
+
+    Deletion in this platform is ordered: a project is not deleted until every
+    resource in it is, a workload is not deleted until its deployments are, and
+    a deployment is not deleted until its instances are. The provider is the
+    bottom of that chain, so the guarantee is only as good as this step. If the
+    provider released the instance as soon as it had asked for teardown, the
+    Instance, its deployment, and its workload would all disappear while a guest
+    still held the node's memory and its addresses — capacity nobody is tracking
+    and nobody will reclaim.
+
+    So the finalizer is held across the whole teardown, and released only once
+    the instance is confirmed stopped. The window this asserts in is real: an
+    instance whose process ignores the stop signal takes its full termination
+    grace period to go, which is exactly the case the ordering exists for.
+
+  template: true
+
+  steps:
+    - name: create-instance
+      description: A running instance to delete.
+      try:
+        - apply:
+            file: instance.yaml
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: torn-down
+              status:
+                phase: Running
+
+    - name: request-deletion
+      description: |
+        Delete the instance without waiting. The point of the suite is what is
+        true between the request and its completion.
+      try:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" delete instance torn-down --wait=false
+
+    - name: assert-held-until-stopped
+      description: |
+        The instance is marked for deletion but still present and still held,
+        while its process is still shutting down.
+      try:
+        - assert:
+            resource:
+              apiVersion: compute.datumapis.com/v1alpha
+              kind: Instance
+              metadata:
+                name: torn-down
+                finalizers:
+                  - kata.datumapis.com/finalizer
+              (metadata.deletionTimestamp != null): true
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: torn-down
+              (metadata.deletionTimestamp != null): true
+
+    - name: assert-fully-torn-down
+      description: |
+        Once the process is gone the finalizer is released and the instance
+        leaves the API. Nothing is left behind for owner-reference garbage
+        collection to find later.
+      try:
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: torn-down
+        - error:
+            resource:
+              apiVersion: compute.datumapis.com/v1alpha
+              kind: Instance
+              metadata:
+                name: torn-down

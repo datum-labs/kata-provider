@@ -1,0 +1,32 @@
+# Helm values for kata-deploy.
+#
+# Helm is the only supported way to install Kata 4.x. The kata-deploy.yaml
+# manifests that earlier instructions point at no longer exist in the Kata
+# repository.
+k8sDistribution: "k8s"
+
+# A single-node Kind cluster has only the control-plane node, so kata-deploy has
+# to install the runtime there.
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+# Install one shim only. Every extra shim pulls another guest image and kernel
+# onto the node for no benefit. Which one is installed comes from up.sh, which
+# passes the shim named by E2E_KATA_SHIM on the command line, so the tier
+# installs the same hypervisor the provider targets.
+shims:
+  disableAll: true
+
+# kata-deploy creates the RuntimeClass objects itself. The provider's
+# kata_runtimeclass component therefore stays off in this environment.
+runtimeClasses:
+  enabled: true
+
+# Kata 4.0 made runtime-rs the default shim on every architecture. The provider
+# targets a Go shim, so up.sh names the selected shim explicitly here too.
+
+debug: true

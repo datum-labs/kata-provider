@@ -1,0 +1,62 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: kata-guest-kernel
+  labels:
+    tier: kata
+spec:
+  description: |
+    Proves the promise the class is sold on: a general-purpose instance runs on
+    its own kernel, not the node's.
+
+    Everything else in this suite is about what the provider decides — which
+    instances it claims, the shape it builds, what it reports. This is the one
+    assertion about what the customer actually gets, and it cannot be made in
+    the portable tier, where a RuntimeClass named for Kata is handled by runc
+    and every instance shares the node kernel. That is why the tier exists and
+    why this suite is excluded from it rather than softened into something that
+    passes there.
+
+    The test is the simplest possible statement of the boundary: the kernel
+    release inside the instance differs from the kernel release on the node
+    hosting it. Two instances on a shared kernel cannot produce different
+    answers here.
+
+  template: true
+
+  steps:
+    - name: create-instance
+      description: A general-purpose instance on a Kata-capable node.
+      try:
+        - apply:
+            file: instance.yaml
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: isolated
+              status:
+                phase: Running
+
+    - name: assert-own-kernel
+      description: |
+        The instance's kernel is not the node's. Reported both ways on failure,
+        because "same kernel" and "could not read a kernel" are different bugs.
+      try:
+        - script:
+            content: |
+              set -e
+              node=$(kubectl get pod isolated -n "$NAMESPACE" -o jsonpath='{.spec.nodeName}')
+              host_kernel=$(kubectl get node "$node" -o jsonpath='{.status.nodeInfo.kernelVersion}')
+              guest_kernel=$(kubectl exec -n "$NAMESPACE" isolated -- uname -r)
+
+              if [ -z "$guest_kernel" ] || [ -z "$host_kernel" ]; then
+                echo "could not read a kernel release: node='$host_kernel' instance='$guest_kernel'" >&2
+                exit 1
+              fi
+              if [ "$guest_kernel" = "$host_kernel" ]; then
+                echo "instance shares the node kernel ($host_kernel) — it is not isolated" >&2
+                exit 1
+              fi
+              echo "node kernel $host_kernel, instance kernel $guest_kernel"
