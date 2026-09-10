@@ -14,14 +14,15 @@ import (
 )
 
 // TestCacheOptions_ClaimsByRuntimeClass checks that the provider claims exactly
-// the instances of the class it serves, and that it does so on the cache rather
-// than after the fact. Two providers share a cell, so an instance claimed by
-// both — or by neither — is a failure with no symptom in status.
+// the instances of the class it serves, and that it claims them on the cache
+// rather than after the fact. Two providers share a cell, so an instance
+// claimed by both providers, or by neither, is a failure with no symptom in
+// status.
 func TestCacheOptions_ClaimsByRuntimeClass(t *testing.T) {
 	byObject, ok := byObjectFor[*computev1alpha.Instance](CacheOptions())
 	if !ok {
-		// Without a cache selector the informer lists and stores every
-		// Instance in the cell, whatever any event predicate does afterwards.
+		// Without a cache selector, the informer lists and stores every
+		// Instance in the cell, whatever an event predicate does afterwards.
 		t.Fatal("Instances must be selected on the cache, not only on events")
 	}
 	if byObject.Label == nil {
@@ -62,8 +63,8 @@ func TestCacheOptions_ClaimsByRuntimeClass(t *testing.T) {
 }
 
 // TestCacheOptions_ScopesPods checks that the provider caches only the Pods it
-// created. A cell runs many more than that, and caching them all costs the same
-// memory that has crash-looped a provider here before.
+// created. A cell runs many more Pods than that, and caching all of them costs
+// the memory that has crash-looped a provider here before.
 func TestCacheOptions_ScopesPods(t *testing.T) {
 	byObject, ok := byObjectFor[*core.Pod](CacheOptions())
 	if !ok {
@@ -99,7 +100,7 @@ func TestCacheOptions_ScopesPods(t *testing.T) {
 }
 
 // byObjectFor finds the cache settings for a type. The options are keyed by a
-// sample object, so they are matched by type rather than by identity.
+// sample object, so this helper matches them by type rather than by identity.
 func byObjectFor[T client.Object](options cache.Options) (cache.ByObject, bool) {
 	for object, byObject := range options.ByObject {
 		if _, match := object.(T); match {

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
-	// to ensure that exec-entrypoint and run can make use of them.
+	// Import every Kubernetes client authentication plugin, for example Azure,
+	// GCP, and OIDC, so that exec-entrypoint and run can use them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -77,8 +77,9 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		// Decoding is what normally applies the declared defaults, so a
-		// deployment that supplies no config file still gets them.
+		// Decoding a configuration file applies the declared defaults. A
+		// deployment that supplies no file still needs those defaults, so apply
+		// them directly.
 		scheme.Default(&serverConfig)
 	}
 
@@ -89,8 +90,9 @@ func main() {
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme,
-		// The cache is scoped to the runtime class this provider serves. It is
-		// not an optimization: see controller.CacheOptions.
+		// The cache is scoped to the runtime class that this provider serves.
+		// The scope is a correctness and memory-safety requirement, not an
+		// optimization. For the reasoning, see controller.CacheOptions.
 		Cache:                   controller.CacheOptions(),
 		Metrics:                 serverConfig.MetricsServer.Options(ctx, nil),
 		WebhookServer:           webhook.NewServer(serverConfig.WebhookServer.Options(ctx, nil)),
