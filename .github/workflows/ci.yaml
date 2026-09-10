@@ -58,9 +58,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Keep this version in step with GOLANGCI_LINT_VERSION in the Makefile, so
+      # that a local `make lint` and CI reach the same verdict. The go.mod file
+      # sets the floor. golangci-lint refuses to load a configuration whose
+      # target Go version is newer than the Go release that built the linter,
+      # and v2.9.0 is the first release built with Go 1.26.
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.1.5
+          version: v2.9.0
 
   # Every overlay has to be deployable, so each is rendered on its own.
   validate-kustomize:
