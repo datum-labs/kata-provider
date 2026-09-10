@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# The RuntimeClass catalog is cluster scoped and lives in the management plane,
+# while this provider's controller runs in a cell. The registration therefore
+# ships on its own rather than inside the cell deployment bundle, so the
+# management plane can apply it without pulling in a controller it does not run.
+resources:
+  - general-purpose.yaml
