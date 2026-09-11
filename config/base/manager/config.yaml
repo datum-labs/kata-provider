@@ -6,11 +6,19 @@ webhookServer: {}
 downstreamResourceManagement:
   # The Kubernetes RuntimeClass instance Pods run under. kata-clh runs the guest
   # under Cloud Hypervisor, which reserves far less memory per instance than
-  # QEMU and so raises how many instances a node holds. Which Kata hypervisor a
-  # site runs stays a deployment decision, so an overlay that installs a
-  # different handler patches this ConfigMap. An arm64 overlay must: Kata 4.x
-  # builds Cloud Hypervisor for x86_64 only, so arm64 sets kata-qemu here.
+  # QEMU and so raises how many instances a node holds. Which Kata hypervisor
+  # and which shim a site runs stay deployment decisions, so an overlay that
+  # installs a different handler patches this ConfigMap and nothing else. An
+  # arm64 overlay must: Kata 4.x builds Cloud Hypervisor for x86_64 only, so
+  # arm64 sets kata-qemu here. A cell moving to the Rust runtime-rs shim sets
+  # katars here and enables the katars_runtimeclass component.
   runtimeHandler: kata-clh
+  # Whether instances join the tenant network their interfaces name. Off here
+  # because a cell without the VPC controller has nothing to serve the request,
+  # and an instance would then never be admitted. A cell that runs the
+  # controller turns this on, and its instances become reachable from outside
+  # the cell.
+  enableVPCNetworking: false
   # nodeSelector and tolerations are left unset: the provider then selects
   # katacontainers.io/kata-runtime=true, the label kata-deploy applies to every
   # node it has installed the runtime on, and adds no toleration. Set them in an

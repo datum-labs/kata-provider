@@ -146,6 +146,16 @@ func TestReconcile_KataPodPolicy(t *testing.T) {
 			wantNodeSelector:   DefaultNodeSelector,
 		},
 		{
+			name: "shim choice is a deployment decision, as a cell moving to runtime-rs makes",
+			config: &config.KataProvider{
+				DownstreamResourceManagement: config.DownstreamResourceManagementConfig{
+					RuntimeHandler: "katars",
+				},
+			},
+			wantRuntimeHandler: "katars",
+			wantNodeSelector:   DefaultNodeSelector,
+		},
+		{
 			name: "node targeting is overridable for sites that install the runtime themselves",
 			config: &config.KataProvider{
 				DownstreamResourceManagement: config.DownstreamResourceManagementConfig{

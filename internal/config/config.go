@@ -126,16 +126,19 @@ type DownstreamResourceManagementConfig struct {
 	Tolerations []core.Toleration `json:"tolerations,omitempty"`
 
 	// RuntimeHandler is the name of the Kubernetes RuntimeClass that the
-	// instance Pods run under. The Kata hypervisor that a site runs is a
-	// deployment decision, so this field is configurable rather than compiled
-	// in. kata-clh and kata-qemu install under different handler names, and
-	// they differ in per-instance memory overhead, in device support, and in
-	// boot latency. Defaults to DefaultRuntimeHandler, which is the Cloud
-	// Hypervisor handler.
+	// instance Pods run under. Which hypervisor and which shim a site runs are
+	// deployment decisions, so this field is configurable rather than compiled
+	// in. Every handler kata-deploy installs is selectable by name, and the
+	// provider treats the value as opaque. Defaults to DefaultRuntimeHandler,
+	// which is the Cloud Hypervisor handler.
 	//
 	// Set this field to kata-qemu on arm64. Kata 4.x ships Cloud Hypervisor for
 	// x86_64 only, so the default handler resolves to nothing on an arm64 node,
 	// and every instance on that node stays unschedulable.
+	//
+	// Set this field to katars to run instances on the Rust runtime-rs shim,
+	// which Kata 4.x makes the upstream default. A RuntimeClass of that name
+	// must exist in the cluster.
 	//
 	// A tenant cannot influence this value. The value comes from provider
 	// configuration, never from the Instance.
@@ -143,4 +146,20 @@ type DownstreamResourceManagementConfig struct {
 	// +optional
 	// +default="kata-clh"
 	RuntimeHandler string `json:"runtimeHandler,omitempty"`
+
+	// EnableVPCNetworking attaches every instance to the tenant network its
+	// interfaces belong to. The provider marks the Pod of an instance that
+	// requests an interface, and the networking stack wires the interface up
+	// from there. A cell without that stack leaves the instance on the
+	// cluster's own network, where nothing outside the cell can reach it.
+	//
+	// The setting also decides who publishes the instance's addresses. See
+	// providerOwnsInterfaceStatus.
+	//
+	// A tenant cannot turn this on or off. Defaults to disabled. Enable it only
+	// in a cell that runs the VPC controller.
+	//
+	// +optional
+	// +default=false
+	EnableVPCNetworking bool `json:"enableVPCNetworking,omitempty"`
 }

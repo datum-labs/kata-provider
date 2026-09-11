@@ -21,7 +21,7 @@ log "applying test/e2e/deploy with runtimeHandler ${E2E_RUNTIME_CLASS}"
 # discover an architecture mismatch. The substitution matches whichever handler
 # the shipped config names, so the environment does not depend on that value.
 "${KUSTOMIZE}" build "${REPO_ROOT}/test/e2e/deploy" |
-	sed -E "s|runtimeHandler: kata-[a-z-]+|runtimeHandler: ${E2E_RUNTIME_CLASS}|" |
+	sed -E "s|runtimeHandler: [a-z0-9-]+|runtimeHandler: ${E2E_RUNTIME_CLASS}|" |
 	kctl apply --server-side -f - >/dev/null
 
 # A new image under an unchanged tag does not restart the Deployment on its own.

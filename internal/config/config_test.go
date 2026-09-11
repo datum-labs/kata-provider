@@ -73,6 +73,48 @@ downstreamResourceManagement:
 	}
 }
 
+// TestRuntimeHandlerIsOpaque decodes a config naming the Rust runtime-rs shim,
+// which no RuntimeClass in this repository declares by default. The provider
+// compiles in no list of known handlers, so a cell selects a shim by
+// configuration alone.
+func TestRuntimeHandlerIsOpaque(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add config scheme: %v", err)
+	}
+	if err := RegisterDefaults(scheme); err != nil {
+		t.Fatalf("failed to register defaults: %v", err)
+	}
+	codecs := serializer.NewCodecFactory(scheme, serializer.EnableStrict)
+
+	data := []byte(`apiVersion: apiserver.config.datumapis.com/v1alpha1
+kind: KataProvider
+downstreamResourceManagement:
+  runtimeHandler: katars
+`)
+
+	var config KataProvider
+	if err := runtime.DecodeInto(codecs.UniversalDecoder(), data, &config); err != nil {
+		t.Fatalf("failed to decode the config: %v", err)
+	}
+
+	if got := config.DownstreamResourceManagement.RuntimeHandler; got != "katars" {
+		t.Errorf("runtimeHandler = %q, want %q", got, "katars")
+	}
+}
+
+// TestVPCNetworkingIsOffByDefault checks the setting that puts an instance on
+// its tenant network. A cell without the VPC controller cannot serve the
+// request, so reaching a tenant network is something a cell opts into.
+func TestVPCNetworkingIsOffByDefault(t *testing.T) {
+	var config KataProvider
+	SetObjectDefaults_KataProvider(&config)
+
+	if config.DownstreamResourceManagement.EnableVPCNetworking {
+		t.Error("expected tenant networking to be opt-in")
+	}
+}
+
 // TestDefaults checks that a deployment supplying no config file still runs
 // against a named Kata handler rather than the cluster's default runtime, which
 // would silently give tenants a shared kernel.
