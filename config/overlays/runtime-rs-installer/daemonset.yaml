@@ -1,0 +1,114 @@
+# Places the Kata runtime-rs shim and its configuration on every compute node.
+#
+# Talos takes its container runtimes from the machine image, but /opt is a
+# writable overlay that containerd already searches for shims, so a shim dropped
+# there is picked up without a restart or a machine rebuild. The overlay lives
+# on the ephemeral partition and a Talos upgrade wipes it, so the placement runs
+# again on every node boot.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kata-runtime-rs-installer
+  labels:
+    app.kubernetes.io/name: kata-runtime-rs-installer
+    app.kubernetes.io/part-of: kata-provider
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kata-runtime-rs-installer
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kata-runtime-rs-installer
+    spec:
+      # Only the nodes carrying the Kata system extension can run the shim, and
+      # on this cell those are the compute workers. A node without the extension
+      # has no hypervisor for the shim to launch.
+      nodeSelector:
+        node-role.datumapis.com/compute: ""
+        compute.datumapis.com/runtime: unikraft
+      # Compute workers are dedicated with a taint, so the installer has to
+      # tolerate it to reach the only nodes it has work to do on.
+      tolerations:
+        - key: compute.datumapis.com/runtime
+          operator: Equal
+          value: unikraft
+          effect: NoSchedule
+      initContainers:
+        - name: install
+          image: ghcr.io/datum-labs/kata-runtime-rs-installer:latest
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              SHIM_DIR=/host/opt/containerd/bin
+              CONF_DIR=/host/opt/kata/share/defaults/kata-containers/runtime-rs
+
+              # Each artifact is written under a temporary name on its
+              # destination filesystem and renamed into place, so containerd
+              # never sees a half-written shim.
+              cp /artifacts/containerd-shim-katars-v2 "${SHIM_DIR}/.shim.tmp"
+              chmod 0755 "${SHIM_DIR}/.shim.tmp"
+
+              # Confirms the copy landed intact before anything can execute it.
+              expected=$(cut -d' ' -f1 /artifacts/containerd-shim-katars-v2.sha256)
+              actual=$(sha256sum < "${SHIM_DIR}/.shim.tmp" | cut -d' ' -f1)
+              if [ "${expected}" != "${actual}" ]; then
+                echo "shim checksum mismatch: want ${expected}, got ${actual}" >&2
+                rm -f "${SHIM_DIR}/.shim.tmp"
+                exit 1
+              fi
+              mv -f "${SHIM_DIR}/.shim.tmp" "${SHIM_DIR}/containerd-shim-katars-v2"
+
+              cp /config/configuration.toml "${CONF_DIR}/.configuration.toml.tmp"
+              chmod 0644 "${CONF_DIR}/.configuration.toml.tmp"
+              mv -f "${CONF_DIR}/.configuration.toml.tmp" "${CONF_DIR}/configuration.toml"
+
+              echo "placed the runtime-rs shim and its configuration:"
+              ls -l "${SHIM_DIR}/containerd-shim-katars-v2" "${CONF_DIR}/configuration.toml"
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+          securityContext:
+            privileged: true
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            - name: containerd-bin
+              mountPath: /host/opt/containerd/bin
+            - name: kata-defaults
+              mountPath: /host/opt/kata/share/defaults/kata-containers/runtime-rs
+            - name: config
+              mountPath: /config
+      containers:
+        # The work is done by the time the pod starts. This container only keeps
+        # the pod alive so the DaemonSet reports what it placed on each node.
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          resources:
+            requests:
+              cpu: "5m"
+              memory: "8Mi"
+            limits:
+              cpu: "10m"
+              memory: "16Mi"
+      terminationGracePeriodSeconds: 5
+      volumes:
+        - name: containerd-bin
+          hostPath:
+            path: /opt/containerd/bin
+            type: DirectoryOrCreate
+        - name: kata-defaults
+          hostPath:
+            # The shim's own search order. Nothing on a Talos node ships this
+            # tree, so the installer owns it.
+            path: /opt/kata/share/defaults/kata-containers/runtime-rs
+            type: DirectoryOrCreate
+        - name: config
+          configMap:
+            name: kata-runtime-rs-config

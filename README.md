@@ -64,6 +64,7 @@ config/base/manager      the Deployment, its Service, ServiceAccount, and config
 config/components/       opt-in pieces: controller_rbac, leader_election, kata_runtimeclass
 config/overlays/cell     what a cell runs: leader election, RBAC, control-plane scheduling
 config/overlays/dev      a single dev cluster: RBAC and a locally declared RuntimeClass
+config/overlays/runtime-rs-installer   places the Kata runtime-rs shim on Talos nodes
 ```
 
 ```bash
@@ -74,6 +75,29 @@ The ClusterRole in `config/components/controller_rbac/role.yaml` is generated
 from the kubebuilder markers in `internal/`. Change the markers and run
 `make manifests`; a hand-edit there disappears on the next regeneration and
 leaves the controller wedged on a denied informer.
+
+## Installing the runtime-rs shim on Talos
+
+Talos takes its container runtimes from the machine image, and the Kata system
+extension it ships carries the Go shim only. `config/overlays/runtime-rs-installer`
+adds a DaemonSet that places the Rust shim, `runtime-rs`, and a matching
+configuration on each compute node, from an image that carries both so nothing
+is fetched at boot. The shim is installed under a distinct name and reads its
+own configuration, so the Go shim the extension provides keeps working
+untouched.
+
+The overlay is independent of the provider overlays: it targets nodes rather
+than the control plane, needs a namespace that admits privileged pods, and only
+belongs on a cell whose machine image carries the Kata extension.
+
+```bash
+kubectl apply -k config/overlays/runtime-rs-installer
+```
+
+Placing the shim does not by itself make it reachable. containerd has to
+register a runtime handler that names it, which on Talos is a machine
+configuration change and a node reboot, and a `RuntimeClass` has to point at
+that handler. Until both exist the installed files are inert.
 
 ## Running locally
 
