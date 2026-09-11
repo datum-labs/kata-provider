@@ -275,6 +275,17 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 			pod.Labels[key] = value
 		}
 
+		// Ask for the instance's interfaces to be wired up. Clearing the label
+		// explicitly takes the opt-in back off Pods that already carry it when
+		// a cell turns the feature off.
+		if r.requestsInterfaceInjection(instance) {
+			pod.Labels[injectInterfacesLabel] = "true"
+		} else {
+			delete(pod.Labels, injectInterfacesLabel)
+		}
+
+		// The injecting webhook writes its annotations outside the runtime
+		// namespace, so they survive this filter.
 		pod.Annotations = podAnnotations(pod.Annotations)
 
 		// A Pod's containers and resources are immutable in the ways that
@@ -421,10 +432,12 @@ func (r *InstanceReconciler) tolerations() []core.Toleration {
 
 // syncInstanceStatus reports what the customer sees on their instance.
 //
-// The provider owns Programmed, Available, the observed template hash, and the
-// network interface status. The provider must not write Ready. Compute derives
-// Ready from Programmed and Available, and writing Ready here would race that
-// derivation.
+// The provider owns Programmed, Available, and the observed template hash. It
+// owns the network interface status only in a cell that allocates the instance
+// no tenant network address. For the reasoning, see providerOwnsInterfaceStatus.
+//
+// The provider must not write Ready. Compute derives Ready from Programmed and
+// Available, and writing Ready here would race that derivation.
 func (r *InstanceReconciler) syncInstanceStatus(
 	ctx context.Context,
 	instance *computev1alpha.Instance,
@@ -519,10 +532,12 @@ func (r *InstanceReconciler) syncInstanceStatus(
 	statusChanged = meta.SetStatusCondition(&instance.Status.Conditions, available) || statusChanged
 	statusChanged = meta.SetStatusCondition(&instance.Status.Conditions, programmed) || statusChanged
 
-	interfaces := buildNetworkInterfaceStatus(instance, pod)
-	if !reflect.DeepEqual(instance.Status.NetworkInterfaces, interfaces) {
-		instance.Status.NetworkInterfaces = interfaces
-		statusChanged = true
+	if r.providerOwnsInterfaceStatus(instance) {
+		interfaces := buildNetworkInterfaceStatus(instance, pod)
+		if !reflect.DeepEqual(instance.Status.NetworkInterfaces, interfaces) {
+			instance.Status.NetworkInterfaces = interfaces
+			statusChanged = true
+		}
 	}
 
 	if !statusChanged {
@@ -536,9 +551,10 @@ func (r *InstanceReconciler) syncInstanceStatus(
 }
 
 // buildNetworkInterfaceStatus reports the addresses that the instance is
-// reachable at. The Pod's addresses are the instance's addresses. A Kata guest
-// holds the Pod's network namespace, so the address that the cluster assigned
-// to the Pod is the address that runs inside the guest.
+// reachable at in a cell with no tenant networking. The Pod's addresses are
+// then the only addresses the instance has. A Kata guest holds the Pod's
+// network namespace, so the address that the cluster assigned to the Pod is the
+// address that runs inside the guest.
 func buildNetworkInterfaceStatus(
 	instance *computev1alpha.Instance,
 	pod *core.Pod,
