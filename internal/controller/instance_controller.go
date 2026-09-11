@@ -258,6 +258,8 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	// Kata handler instead of to the shared-kernel default.
 	desired.Spec.RuntimeClassName = ptr.To(r.runtimeHandler())
 
+	applyPodSecurityContext(&desired.Spec)
+
 	pod := &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name,
@@ -304,6 +306,37 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// applyPodSecurityContext hardens an instance Pod to what a cell's PodSecurity
+// admission asks of a workload.
+//
+// A Kata guest needs no privilege on the host. The hypervisor is the isolation
+// boundary, and the workload inside the guest runs under the same container
+// security context it would run under on a shared kernel.
+//
+// runAsNonRoot is deliberately absent. The general-purpose class exists to run
+// stock container images, and many of them start as root. Setting the field
+// would fail exactly the images the class promises to run, so a cell hosting
+// these instances enforces the PodSecurity baseline profile. The fields set
+// here are the ones the restricted profile additionally checks and this class
+// can honour regardless of the image.
+func applyPodSecurityContext(spec *core.PodSpec) {
+	spec.SecurityContext = &core.PodSecurityContext{
+		SeccompProfile: &core.SeccompProfile{Type: core.SeccompProfileTypeRuntimeDefault},
+	}
+
+	for i := range spec.Containers {
+		spec.Containers[i].SecurityContext = &core.SecurityContext{
+			AllowPrivilegeEscalation: ptr.To(false),
+			Capabilities: &core.Capabilities{
+				Drop: []core.Capability{"ALL"},
+				// A stock image serving on a privileged port needs this one
+				// capability back, and both PodSecurity profiles permit it.
+				Add: []core.Capability{"NET_BIND_SERVICE"},
+			},
+		}
+	}
 }
 
 // podOptions returns the Kata-specific policy that this provider contributes to
