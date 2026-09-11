@@ -38,8 +38,10 @@ cluster it runs in must already provide:
    Datum's runtime class: it is the node-level binding that points the kubelet
    at Kata. `kata-deploy` creates it; where the runtime is installed by other
    means, enable the `kata_runtimeclass` component. The handler defaults to
-   `kata-qemu` and is configurable, because `kata-qemu` and `kata-clh` are a
-   deployment choice.
+   `kata-clh`, Cloud Hypervisor, which reserves far less memory per instance
+   than QEMU and so raises instance density. The handler stays configurable,
+   because it is a deployment choice — and an arm64 cluster must set
+   `kata-qemu`, since Kata 4.x builds Cloud Hypervisor for x86_64 only.
 3. **Labelled nodes.** Instance Pods select `katacontainers.io/kata-runtime=true`,
    which `kata-deploy` applies to every node it has installed the runtime on.
    Override the selector, and add tolerations, in the provider's config.
