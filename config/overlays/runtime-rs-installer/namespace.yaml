@@ -1,0 +1,10 @@
+# The installer writes to the host filesystem, so it needs a namespace that
+# admits a privileged pod. The provider's own namespace stays on the restricted
+# baseline.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kata-runtime-install
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    app.kubernetes.io/part-of: kata-provider

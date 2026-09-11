@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Ships separately from the provider overlay. This writes to node filesystems,
+# runs privileged, and is only correct on a node whose machine image carries the
+# Kata system extension. A cell opts into it independently.
+namespace: kata-runtime-install
+
+resources:
+  - namespace.yaml
+  - daemonset.yaml
+
+configMapGenerator:
+  # Hash-suffixed, so a configuration change rolls the DaemonSet and re-places
+  # the file on every node.
+  - name: kata-runtime-rs-config
+    files:
+      - configuration.toml
+
+images:
+  # Pinned to the published tag by the bundle release workflow.
+  - name: ghcr.io/datum-labs/kata-runtime-rs-installer
+    newTag: latest

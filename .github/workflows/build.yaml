@@ -27,11 +27,31 @@ jobs:
       registry-organization: datum-labs
     secrets: inherit
 
-  # Pin the image to the tag that the job above published. Then push the config
+  # The Kata runtime-rs shim, packaged so a node installer has nothing to fetch
+  # at boot. amd64 only: the Kata project publishes no runtime-rs build for
+  # other architectures.
+  publish-runtime-rs-installer-image:
+    needs:
+      - validate-kustomize
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+      attestations: write
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.20.0
+    with:
+      image-name: kata-runtime-rs-installer
+      dockerfile-path: dockerfiles/runtime-rs-installer.Dockerfile
+      platforms: linux/amd64
+      registry-organization: datum-labs
+    secrets: inherit
+
+  # Pin each image to the tag its job above published. Then push the config
   # tree as the bundle that a cell deploys from.
   publish-kustomize-bundle:
     needs:
       - publish-container-image
+      - publish-runtime-rs-installer-image
     # A called workflow cannot hold a permission that its caller was not
     # granted, and the called job needs all three permissions to push the bundle
     # to the GitHub Container Registry. Without them, the request exceeds the
@@ -48,4 +68,5 @@ jobs:
       bundle-path: config
       images: |
         - { path: config/base/manager, name: ghcr.io/datum-labs/kata-provider, tag: "${{ needs.publish-container-image.outputs.tag }}" }
+        - { path: config/overlays/runtime-rs-installer, name: ghcr.io/datum-labs/kata-runtime-rs-installer, tag: "${{ needs.publish-runtime-rs-installer-image.outputs.tag }}" }
     secrets: inherit
