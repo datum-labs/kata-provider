@@ -10,6 +10,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 )
 
+// defaultRuntimeHandler is the handler the shipped configuration and the type
+// defaults both name.
+const defaultRuntimeHandler = "kata-clh"
+
 // TestDecodeShippedConfig decodes the config file the deployment mounts, with
 // the same strict decoder the manager uses. A setting that the shipped config
 // names but the type no longer has would otherwise only surface as a manager
@@ -34,8 +38,8 @@ func TestDecodeShippedConfig(t *testing.T) {
 		t.Fatalf("failed to decode the shipped config: %v", err)
 	}
 
-	if got := config.DownstreamResourceManagement.RuntimeHandler; got != "kata-clh" {
-		t.Errorf("runtimeHandler = %q, want %q", got, "kata-clh")
+	if got := config.DownstreamResourceManagement.RuntimeHandler; got != defaultRuntimeHandler {
+		t.Errorf("runtimeHandler = %q, want %q", got, defaultRuntimeHandler)
 	}
 }
 
@@ -76,8 +80,8 @@ func TestDefaults(t *testing.T) {
 	var config KataProvider
 	SetObjectDefaults_KataProvider(&config)
 
-	if got := config.DownstreamResourceManagement.RuntimeHandler; got != "kata-clh" {
-		t.Errorf("runtimeHandler = %q, want %q", got, "kata-clh")
+	if got := config.DownstreamResourceManagement.RuntimeHandler; got != defaultRuntimeHandler {
+		t.Errorf("runtimeHandler = %q, want %q", got, defaultRuntimeHandler)
 	}
 	if got := config.MetricsServer.BindAddress; got == "" {
 		t.Error("expected a default metrics bind address")

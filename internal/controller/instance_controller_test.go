@@ -682,3 +682,55 @@ func podWaitingWith(k8sReason string) *core.Pod {
 	}
 	return pod
 }
+
+// TestReconcile_PodSecurityContext covers what a cell's PodSecurity admission
+// checks on an instance Pod. A cell rejects, or at minimum flags, a Pod that
+// leaves these fields unset, so an instance that omits them never starts.
+func TestReconcile_PodSecurityContext(t *testing.T) {
+	reconciler, fakeClient := newReconciler(t, nil, newTestInstance())
+
+	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	pod, found := getPod(t, fakeClient)
+	if !found {
+		t.Fatal("expected the instance to be backed by a pod")
+	}
+
+	if pod.Spec.SecurityContext == nil || pod.Spec.SecurityContext.SeccompProfile == nil {
+		t.Fatal("expected the pod to select a seccomp profile")
+	}
+	if got := pod.Spec.SecurityContext.SeccompProfile.Type; got != core.SeccompProfileTypeRuntimeDefault {
+		t.Errorf("seccompProfile.type = %q, want %q", got, core.SeccompProfileTypeRuntimeDefault)
+	}
+
+	// The class exists to run stock images, and many of them start as root.
+	// Requiring a non-root user would fail the images the class promises to
+	// run, so the field stays unset and the cell enforces the baseline profile.
+	if pod.Spec.SecurityContext.RunAsNonRoot != nil {
+		t.Error("expected the provider to leave the user of a stock image alone")
+	}
+
+	security := pod.Spec.Containers[0].SecurityContext
+	if security == nil {
+		t.Fatal("expected the instance container to carry a security context")
+	}
+	if security.AllowPrivilegeEscalation == nil || *security.AllowPrivilegeEscalation {
+		t.Error("expected privilege escalation to be denied")
+	}
+	if security.RunAsNonRoot != nil {
+		t.Error("expected the provider to leave the user of a stock image alone")
+	}
+	if security.Capabilities == nil {
+		t.Fatal("expected the instance container to drop capabilities")
+	}
+	if got := security.Capabilities.Drop; len(got) != 1 || got[0] != "ALL" {
+		t.Errorf("capabilities.drop = %v, want [ALL]", got)
+	}
+	// Serving on a privileged port is ordinary for a stock image, and both
+	// PodSecurity profiles permit adding this capability back.
+	if got := security.Capabilities.Add; len(got) != 1 || got[0] != "NET_BIND_SERVICE" {
+		t.Errorf("capabilities.add = %v, want [NET_BIND_SERVICE]", got)
+	}
+}

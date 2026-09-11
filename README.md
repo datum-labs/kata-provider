@@ -45,7 +45,14 @@ cluster it runs in must already provide:
 3. **Labelled nodes.** Instance Pods select `katacontainers.io/kata-runtime=true`,
    which `kata-deploy` applies to every node it has installed the runtime on.
    Override the selector, and add tolerations, in the provider's config.
-4. **The compute CRDs**, which are owned and published by the compute control
+4. **Namespaces that enforce the PodSecurity `baseline` profile**, not
+   `restricted`, for the namespaces instances land in. Instance Pods select a
+   seccomp profile, deny privilege escalation, and drop capabilities, which is
+   everything `restricted` asks that a stock container image can honour.
+   `restricted` also requires a non-root user, and the general-purpose class
+   exists to run stock images, most of which start as root. A cell enforcing
+   `restricted` rejects those images rather than isolating them.
+5. **The compute CRDs**, which are owned and published by the compute control
    plane, not by this repository.
 
 ## Deploying
