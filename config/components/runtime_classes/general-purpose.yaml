@@ -6,7 +6,7 @@
 #
 # Every field below is a promise to a customer, so the class declares only what
 # a Kata-backed instance delivers today. internal/controller/capabilities.go is
-# the same declaration in code, and the provider reports through the Accepted
+# the same declaration in code, and the provider reports through the Available
 # condition when the two disagree. Keep them in step.
 apiVersion: compute.datumapis.com/v1alpha
 kind: RuntimeClass
