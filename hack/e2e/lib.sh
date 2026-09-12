@@ -81,10 +81,18 @@ fi
 # provider compiles against that version's Go types. Any other source lets the
 # cluster accept an Instance that the binary cannot represent, or reject one
 # that it can.
+#
+# The module has to be in the local cache before its directory exists, and a
+# build of this repository alone does not put it there. Asking go for the
+# directory without downloading first yields nothing on any machine that has
+# not already fetched this exact version, which is every fresh continuous
+# integration runner after the pin moves.
 compute_crd_dir() {
-	local version
-	version="$(cd "${REPO_ROOT}" && go list -m -f '{{.Version}}' go.datum.net/compute)"
-	echo "$(go env GOMODCACHE)/go.datum.net/compute@${version}/config/base/crd"
+	local dir
+	dir="$(cd "${REPO_ROOT}" &&
+		go mod download go.datum.net/compute &&
+		go list -m -f '{{.Dir}}' go.datum.net/compute)"
+	echo "${dir}/config/base/crd"
 }
 
 KUSTOMIZE="${KUSTOMIZE:-${REPO_ROOT}/bin/kustomize}"
