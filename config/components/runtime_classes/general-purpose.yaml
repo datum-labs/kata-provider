@@ -30,10 +30,58 @@ spec:
       - secretVolumes
       - envFrom
       - imagePullSecrets
+      - containerCapabilities
+    # Every Linux capability. A capability acts inside the instance's own
+    # virtual machine, whose kernel confines it, so granting one gives no access
+    # to the machine running the instance.
+    grantableCapabilities:
+      - AUDIT_CONTROL
+      - AUDIT_READ
+      - AUDIT_WRITE
+      - BLOCK_SUSPEND
+      - BPF
+      - CHECKPOINT_RESTORE
+      - CHOWN
+      - DAC_OVERRIDE
+      - DAC_READ_SEARCH
+      - FOWNER
+      - FSETID
+      - IPC_LOCK
+      - IPC_OWNER
+      - KILL
+      - LEASE
+      - LINUX_IMMUTABLE
+      - MAC_ADMIN
+      - MAC_OVERRIDE
+      - MKNOD
+      - NET_ADMIN
+      - NET_BIND_SERVICE
+      - NET_BROADCAST
+      - NET_RAW
+      - PERFMON
+      - SETFCAP
+      - SETGID
+      - SETPCAP
+      - SETUID
+      - SYSLOG
+      - SYS_ADMIN
+      - SYS_BOOT
+      - SYS_CHROOT
+      - SYS_MODULE
+      - SYS_NICE
+      - SYS_PACCT
+      - SYS_PTRACE
+      - SYS_RAWIO
+      - SYS_RESOURCE
+      - SYS_TIME
+      - SYS_TTY_CONFIG
+      - WAKE_ALARM
     compatibility: >-
       Runs standard Linux container images without modification, including
       images that need a full filesystem, dynamic linking, or credentials to
-      pull. Storage lives with the instance: durable disks and raw device
+      pull. A container can request any Linux capability its image needs, such
+      as CHOWN or SETUID, and the capability applies only inside the instance's
+      own virtual machine. Storage lives with the instance: durable disks and raw device
       attachments are not offered yet, and neither is booting a
       customer-supplied virtual machine image.
   lifecycle:
