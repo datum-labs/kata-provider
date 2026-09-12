@@ -51,12 +51,12 @@ func newTestInstance(mutators ...func(*computev1alpha.Instance)) *computev1alpha
 			Namespace:  testInstanceNamespace,
 			Generation: 1,
 			Labels: map[string]string{
-				computev1alpha.RuntimeClassLabel: computev1alpha.RuntimeClassGeneralPurpose,
+				computev1alpha.RuntimeClassLabel: RuntimeClassName,
 			},
 		},
 		Spec: computev1alpha.InstanceSpec{
 			Runtime: computev1alpha.InstanceRuntimeSpec{
-				Class: computev1alpha.RuntimeClassGeneralPurpose,
+				Class: RuntimeClassName,
 				Resources: computev1alpha.InstanceRuntimeResources{
 					InstanceType: instancetype.D1Standard2,
 				},

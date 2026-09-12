@@ -13,6 +13,11 @@ import (
 	computev1alpha "go.datum.net/compute/api/v1alpha"
 )
 
+// otherRuntimeClassName stands for a class served by a different provider in
+// the same cell. The cache test needs a name this provider must not claim, and
+// any name other than its own does.
+const otherRuntimeClassName = "unikernel"
+
 // TestCacheOptions_ClaimsByRuntimeClass checks that the provider claims exactly
 // the instances of the class it serves, and that it claims them on the cache
 // rather than after the fact. Two providers share a cell, so an instance
@@ -37,13 +42,13 @@ func TestCacheOptions_ClaimsByRuntimeClass(t *testing.T) {
 	}{
 		{
 			name:       "an instance in this class is claimed",
-			labels:     map[string]string{computev1alpha.RuntimeClassLabel: computev1alpha.RuntimeClassGeneralPurpose},
+			labels:     map[string]string{computev1alpha.RuntimeClassLabel: RuntimeClassName},
 			wantClaim:  true,
 			wantReason: "this is the class the provider serves",
 		},
 		{
 			name:       "another class's instance is left to its own provider",
-			labels:     map[string]string{computev1alpha.RuntimeClassLabel: computev1alpha.RuntimeClassUnikernel},
+			labels:     map[string]string{computev1alpha.RuntimeClassLabel: otherRuntimeClassName},
 			wantReason: "claiming it would run a unikernel workload on the wrong runtime",
 		},
 		{

@@ -31,7 +31,7 @@ func CacheOptions() cache.Options {
 	return cache.Options{
 		ByObject: map[client.Object]cache.ByObject{
 			&computev1alpha.Instance{}: {
-				Label: computev1alpha.InstanceRuntimeClassSelector(computev1alpha.RuntimeClassGeneralPurpose),
+				Label: computev1alpha.InstanceRuntimeClassSelector(RuntimeClassName),
 			},
 			// A cell runs Pods that this provider did not create, including
 			// the other class's Pods and the platform's own. Caching all of
