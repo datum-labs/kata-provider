@@ -6,7 +6,7 @@ require (
 	// Pinned to a compute commit rather than a release, because the runtime
 	// class contract this provider implements is newer than the latest tag.
 	// Repin to a stable go.datum.net/compute tag once one carries it.
-	go.datum.net/compute v0.8.0-dev.12.0.20260912012307-63cbebe54543
+	go.datum.net/compute v0.8.0-dev.12.0.20260912220626-95432e175d56
 	go.datum.net/network-services-operator v0.26.5-0.20260911235442-196ee79e9ebf
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
