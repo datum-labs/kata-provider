@@ -40,3 +40,10 @@ spec:
     description: >-
       Instances take several seconds to start, dominated by booting a kernel and
       pulling the image. Suspend, resume, and snapshot are not offered yet.
+
+  # A guest in this class reads no node state, so it cannot find a network of
+  # its own: the hypervisor is told which host device belongs to the instance,
+  # along with the addresses and MTU to configure on it. Declaring that here
+  # keeps a cell from having to be configured for the class before an instance
+  # of it can reach a tenant network.
+  networkAttachment: HypervisorDeclared
