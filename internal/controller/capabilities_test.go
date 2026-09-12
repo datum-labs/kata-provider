@@ -17,8 +17,8 @@ import (
 // any such change must be a deliberate edit to this table rather than a side
 // effect.
 func TestCapabilities(t *testing.T) {
-	if Capabilities.Class != computev1alpha.RuntimeClassGeneralPurpose {
-		t.Fatalf("class = %q, want %q", Capabilities.Class, computev1alpha.RuntimeClassGeneralPurpose)
+	if Capabilities.Class != RuntimeClassName {
+		t.Fatalf("class = %q, want %q", Capabilities.Class, RuntimeClassName)
 	}
 
 	tests := []struct {
@@ -89,7 +89,7 @@ func TestCapabilities_UnsupportedRequestsAreRejected(t *testing.T) {
 				t.Fatalf("got %d rejections, want %d: %v", len(errs), tc.wantErrors, errs)
 			}
 			for _, err := range errs {
-				if got := err.Error(); !strings.Contains(got, computev1alpha.RuntimeClassGeneralPurpose) {
+				if got := err.Error(); !strings.Contains(got, RuntimeClassName) {
 					t.Errorf("rejection %q does not name the class the customer should move to", got)
 				}
 			}

@@ -125,7 +125,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager",
-		"runtimeClass", computev1alpha.RuntimeClassGeneralPurpose,
+		"runtimeClass", controller.RuntimeClassName,
 		"runtimeHandler", serverConfig.DownstreamResourceManagement.RuntimeHandler,
 	)
 	if err := mgr.Start(ctx); err != nil {

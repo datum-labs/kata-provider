@@ -3,9 +3,15 @@
 package controller
 
 import (
-	computev1alpha "go.datum.net/compute/api/v1alpha"
 	"go.datum.net/compute/pkg/runtimeclass"
 )
+
+// RuntimeClassName is the class this provider serves. A provider names its own
+// class, because a class name compiled into the platform would be a tier the
+// catalog could not retire. The name matches the RuntimeClass this repository
+// registers, and the two must stay in step: the provider claims an instance by
+// this name, so a mismatch leaves every instance of the class unclaimed.
+const RuntimeClassName = "general-purpose"
 
 // Capabilities declares what the general-purpose class can serve, as this
 // provider realizes it: a Kata-isolated Pod on an ordinary kubelet node.
@@ -16,7 +22,7 @@ import (
 // better outcome for a customer than an instance that starts with part of their
 // request dropped.
 var Capabilities = runtimeclass.Capabilities{
-	Class: computev1alpha.RuntimeClassGeneralPurpose,
+	Class: RuntimeClassName,
 	Features: []runtimeclass.Feature{
 		// The class exists to run ordinary Linux container images. Such an
 		// image gets a real kernel and a writable root filesystem, and its
