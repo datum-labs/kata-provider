@@ -18,7 +18,7 @@ What this class offers, and what it does not:
 | | |
 | --- | --- |
 | **Isolation** | A per-instance kernel and virtual machine boundary, not a shared kernel. |
-| **Compatibility** | Ordinary Linux container images. No position-independent binary requirement, no RAM-resident root filesystem. |
+| **Compatibility** | Ordinary Linux container images. No position-independent binary requirement, no RAM-resident root filesystem. A container can request any Linux capability its image needs, such as `CHOWN` or `SETUID`, and the capability applies only inside the instance's own virtual machine. |
 | **Startup** | Slower than the unikernel class: a guest kernel boots per instance. |
 | **Not served** | Virtual machine instances booting a customer-supplied image, and disk-backed volumes. Both are refused at apply time, naming the class, rather than quietly dropped. |
 
@@ -45,13 +45,21 @@ cluster it runs in must already provide:
 3. **Labelled nodes.** Instance Pods select `katacontainers.io/kata-runtime=true`,
    which `kata-deploy` applies to every node it has installed the runtime on.
    Override the selector, and add tolerations, in the provider's config.
-4. **Namespaces that enforce the PodSecurity `baseline` profile**, not
-   `restricted`, for the namespaces instances land in. Instance Pods select a
-   seccomp profile, deny privilege escalation, and drop capabilities, which is
-   everything `restricted` asks that a stock container image can honour.
-   `restricted` also requires a non-root user, and the general-purpose class
-   exists to run stock images, most of which start as root. A cell enforcing
-   `restricted` rejects those images rather than isolating them.
+4. **Namespaces that exempt instances of this class from the PodSecurity
+   profile the cell enforces.** Instance Pods select a seccomp profile, deny
+   privilege escalation, and drop every capability, then add back
+   `NET_BIND_SERVICE` and whatever capabilities the customer's containers
+   request. `restricted` permits only `NET_BIND_SERVICE` and refuses the root
+   user most stock images start as, and `baseline` refuses any capability
+   outside its short default list, such as `SYS_ADMIN` or `NET_ADMIN`.
+   The exemption is safe because an instance is a virtual machine: capabilities,
+   root, and system calls act on the guest kernel, not the host. What a guest
+   does not confine is host namespaces, host ports, host paths, and privileged
+   host containers, and the provider never produces any of them; a unit test
+   pins that. Keep the Kata runtime handler's
+   `privileged_without_host_devices` set, so that even a privileged guest
+   receives no host devices. Until a cell is exempted, an instance that requests a capability
+   the profile refuses reports a configuration error rather than starting.
 5. **The compute CRDs**, which are owned and published by the compute control
    plane, not by this repository.
 
