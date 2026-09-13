@@ -1,0 +1,104 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: container-capabilities
+  labels:
+    tier: portable
+spec:
+  description: |
+    Proves that a customer can run a stock image that needs Linux capabilities
+    to start, by asking for them on the container.
+
+    nginx is the case that motivated the feature: with every capability removed
+    it cannot change the ownership of its cache directories and exits on boot.
+    The suite asserts on what a customer or an operator would notice:
+
+      - The class this repository registers is accepted by compute's schema,
+        so every capability name it grants is one compute recognizes.
+      - The instance runs with drop: [ALL] and exactly the requested
+        capabilities plus the privileged-port default. The customer's
+        drop: [ALL] does not take that default away.
+      - Privilege escalation stays denied, so a capability request relaxes
+        nothing else.
+      - The instance is available, has not restarted, and serves.
+
+  template: true
+
+  steps:
+    - name: register-the-class
+      description: |
+        Apply the RuntimeClass this repository ships. Compute's schema checks
+        each grantable capability against the Linux capability names, so a
+        misspelled or invented name fails here rather than in a cell.
+      try:
+        - apply:
+            file: ../../../config/components/runtime_classes/general-purpose.yaml
+
+    - name: create-instance
+      description: Ask for nginx with the capabilities it needs.
+      try:
+        - apply:
+            file: instance.yaml
+
+    - name: assert-capabilities-are-granted
+      description: |
+        The container drops everything and adds back the request and the
+        default, and nothing else about its security context is relaxed.
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: capabilities
+              spec:
+                runtimeClassName: ($values.runtimeClass)
+                containers:
+                  - name: nginx
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop:
+                          - ALL
+                        add:
+                          - CHOWN
+                          - NET_BIND_SERVICE
+                          - SETGID
+                          - SETUID
+              status:
+                phase: Running
+                containerStatuses:
+                  - name: nginx
+                    ready: true
+                    restartCount: 0
+
+    - name: assert-instance-is-available
+      try:
+        - assert:
+            resource:
+              apiVersion: compute.datumapis.com/v1alpha
+              kind: Instance
+              metadata:
+                name: capabilities
+              status:
+                (conditions[?type == 'Programmed'] | [0]):
+                  status: "True"
+                  reason: Programmed
+                (conditions[?type == 'Available'] | [0]):
+                  status: "True"
+                  reason: Available
+
+    - name: assert-instance-serves
+      description: |
+        A running process is not enough: nginx exits on a failed chown only
+        after it reports started, so the suite asks it for a page.
+      try:
+        - script:
+            content: |
+              code=$(kubectl -n "$NAMESPACE" exec capabilities -c nginx -- \
+                curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/)
+              if [ "$code" != "200" ]; then
+                echo "nginx answered $code, want 200" >&2
+                exit 1
+              fi
+              echo "nginx serves"

@@ -4,6 +4,9 @@ package controller
 
 import (
 	"context"
+	"errors"
+	"slices"
+	"strings"
 	"testing"
 
 	core "k8s.io/api/core/v1"
@@ -12,11 +15,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	computev1alpha "go.datum.net/compute/api/v1alpha"
 	"go.datum.net/compute/pkg/instancetype"
@@ -27,6 +32,14 @@ import (
 const (
 	testInstanceName      = "test-instance"
 	testInstanceNamespace = "default"
+	testContainerName     = "app"
+
+	// Capabilities the tests request, beyond the provider default.
+	capChown    = "CHOWN"
+	capSetuid   = "SETUID"
+	capSetgid   = "SETGID"
+	capSysAdmin = "SYS_ADMIN"
+	capNetAdmin = "NET_ADMIN"
 )
 
 func testScheme(t *testing.T) *runtime.Scheme {
@@ -62,7 +75,7 @@ func newTestInstance(mutators ...func(*computev1alpha.Instance)) *computev1alpha
 				},
 				Sandbox: &computev1alpha.SandboxRuntime{
 					Containers: []computev1alpha.SandboxContainer{
-						{Name: "app", Image: "docker.io/library/nginx:latest"},
+						{Name: testContainerName, Image: "docker.io/library/nginx:latest"},
 					},
 				},
 			},
@@ -77,11 +90,24 @@ func newTestInstance(mutators ...func(*computev1alpha.Instance)) *computev1alpha
 
 func newReconciler(t *testing.T, cfg *config.KataProvider, objects ...client.Object) (*InstanceReconciler, client.Client) {
 	t.Helper()
+	return newInterceptedReconciler(t, cfg, interceptor.Funcs{}, objects...)
+}
+
+// newInterceptedReconciler builds a reconciler whose client calls pass through
+// funcs first, to observe or refuse what the provider sends the API server.
+func newInterceptedReconciler(
+	t *testing.T,
+	cfg *config.KataProvider,
+	funcs interceptor.Funcs,
+	objects ...client.Object,
+) (*InstanceReconciler, client.Client) {
+	t.Helper()
 	scheme := testScheme(t)
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(objects...).
 		WithStatusSubresource(&computev1alpha.Instance{}).
+		WithInterceptorFuncs(funcs).
 		Build()
 	return &InstanceReconciler{Client: fakeClient, Scheme: scheme, Config: cfg}, fakeClient
 }
@@ -732,15 +758,268 @@ func TestReconcile_PodSecurityContext(t *testing.T) {
 	if security.RunAsNonRoot != nil {
 		t.Error("expected the provider to leave the user of a stock image alone")
 	}
-	if security.Capabilities == nil {
-		t.Fatal("expected the instance container to drop capabilities")
+}
+
+// TestReconcile_ContainerCapabilities covers how a customer's capability
+// request combines with the provider's default. Every container drops ALL, so a
+// capability the container runs with is exactly one in add.
+func TestReconcile_ContainerCapabilities(t *testing.T) {
+	tests := []struct {
+		name    string
+		request *computev1alpha.SandboxCapabilities
+		wantAdd []core.Capability
+	}{
+		{
+			name:    "a container with no request keeps the privileged-port default",
+			wantAdd: []core.Capability{defaultCapability},
+		},
+		{
+			name: "requested capabilities are added alongside the default",
+			request: &computev1alpha.SandboxCapabilities{
+				Add: []computev1alpha.Capability{capSetuid, capChown, capSetgid},
+			},
+			wantAdd: []core.Capability{capChown, defaultCapability, capSetgid, capSetuid},
+		},
+		{
+			name: "dropping the default by name removes it",
+			request: &computev1alpha.SandboxCapabilities{
+				Add:  []computev1alpha.Capability{capChown},
+				Drop: []computev1alpha.Capability{computev1alpha.Capability(defaultCapability)},
+			},
+			wantAdd: []core.Capability{capChown},
+		},
+		{
+			name: "dropping ALL, as Kubernetes manifests commonly do, keeps the default",
+			request: &computev1alpha.SandboxCapabilities{
+				Drop: []computev1alpha.Capability{computev1alpha.CapabilityAll},
+			},
+			wantAdd: []core.Capability{defaultCapability},
+		},
+		{
+			name: "requesting the default explicitly does not duplicate it",
+			request: &computev1alpha.SandboxCapabilities{
+				Add:  []computev1alpha.Capability{computev1alpha.Capability(defaultCapability), capChown},
+				Drop: []computev1alpha.Capability{computev1alpha.CapabilityAll},
+			},
+			wantAdd: []core.Capability{capChown, defaultCapability},
+		},
+		{
+			name: "a capability that acts only inside the guest kernel is granted",
+			request: &computev1alpha.SandboxCapabilities{
+				Add: []computev1alpha.Capability{capSysAdmin},
+			},
+			wantAdd: []core.Capability{defaultCapability, capSysAdmin},
+		},
 	}
-	if got := security.Capabilities.Drop; len(got) != 1 || got[0] != "ALL" {
-		t.Errorf("capabilities.drop = %v, want [ALL]", got)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			instance := newTestInstance(func(i *computev1alpha.Instance) {
+				if tc.request != nil {
+					i.Spec.Runtime.Sandbox.Containers[0].SecurityContext = &computev1alpha.SandboxSecurityContext{
+						Capabilities: tc.request,
+					}
+				}
+			})
+			reconciler, fakeClient := newReconciler(t, nil, instance)
+
+			if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
+				t.Fatalf("reconcile failed: %v", err)
+			}
+
+			pod, found := getPod(t, fakeClient)
+			if !found {
+				t.Fatal("expected the instance to be backed by a pod")
+			}
+			security := pod.Spec.Containers[0].SecurityContext
+			if security == nil || security.Capabilities == nil {
+				t.Fatal("expected the instance container to carry capabilities")
+			}
+			if got := security.Capabilities.Drop; !slices.Equal(got, []core.Capability{"ALL"}) {
+				t.Errorf("capabilities.drop = %v, want [ALL]", got)
+			}
+			if got := security.Capabilities.Add; !slices.Equal(got, tc.wantAdd) {
+				t.Errorf("capabilities.add = %v, want %v", got, tc.wantAdd)
+			}
+			if security.AllowPrivilegeEscalation == nil || *security.AllowPrivilegeEscalation {
+				t.Error("expected privilege escalation to stay denied")
+			}
+		})
 	}
-	// Serving on a privileged port is ordinary for a stock image, and both
-	// PodSecurity profiles permit adding this capability back.
-	if got := security.Capabilities.Add; len(got) != 1 || got[0] != "NET_BIND_SERVICE" {
-		t.Errorf("capabilities.add = %v, want [NET_BIND_SERVICE]", got)
+}
+
+// TestReconcile_DeclinedPodIsReportedOnTheInstance covers a cell that refuses
+// the instance Pod, as PodSecurity admission does before a cell exempts this
+// class. The customer must see why their instance is not starting, in instance
+// language, rather than an instance stuck provisioning.
+func TestReconcile_DeclinedPodIsReportedOnTheInstance(t *testing.T) {
+	instance := newTestInstance(func(i *computev1alpha.Instance) {
+		i.Spec.Runtime.Sandbox.Containers[0].SecurityContext = &computev1alpha.SandboxSecurityContext{
+			Capabilities: &computev1alpha.SandboxCapabilities{Add: []computev1alpha.Capability{capSysAdmin}},
+		}
+	})
+
+	// The error is shaped like the one PodSecurity admission returns.
+	declined := apierrors.NewForbidden(
+		schema.GroupResource{Resource: "pods"},
+		testInstanceName,
+		errors.New(`violates PodSecurity "baseline:latest": non-default capabilities `+
+			`(container "app" must not include "SYS_ADMIN" in securityContext.capabilities.add)`),
+	)
+	funcs := interceptor.Funcs{
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			if _, isPod := obj.(*core.Pod); isPod {
+				return declined
+			}
+			return c.Create(ctx, obj, opts...)
+		},
 	}
+	reconciler, fakeClient := newInterceptedReconciler(t, nil, funcs, instance)
+
+	// The error return is what makes the work queue retry with backoff.
+	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err == nil {
+		t.Fatal("expected reconcile to return an error so the instance is retried")
+	}
+
+	updated := getInstance(t, fakeClient)
+	for _, conditionType := range []string{computev1alpha.InstanceProgrammed, computev1alpha.InstanceAvailable} {
+		condition := apimeta.FindStatusCondition(updated.Status.Conditions, conditionType)
+		if condition == nil {
+			t.Fatalf("expected a %s condition", conditionType)
+		}
+		if condition.Status != metav1.ConditionFalse {
+			t.Errorf("%s status = %s, want False", conditionType, condition.Status)
+		}
+		if condition.Reason != computev1alpha.InstanceProgrammedReasonConfigurationError {
+			t.Errorf("%s reason = %q, want %q", conditionType, condition.Reason,
+				computev1alpha.InstanceProgrammedReasonConfigurationError)
+		}
+		for _, internal := range []string{"PodSecurity", "Pod", "pod", "baseline"} {
+			if strings.Contains(condition.Message, internal) {
+				t.Errorf("%s message %q leaks platform internals (%q)", conditionType, condition.Message, internal)
+			}
+		}
+		if !strings.Contains(condition.Message, "capabilities") {
+			t.Errorf("%s message %q does not point the customer at the capability request", conditionType, condition.Message)
+		}
+	}
+	if apimeta.FindStatusCondition(updated.Status.Conditions, computev1alpha.InstanceReady) != nil {
+		t.Error("the provider must not write the Ready condition")
+	}
+
+	// A second refusal writes nothing new, so a retry does not churn status.
+	resourceVersion := updated.ResourceVersion
+	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err == nil {
+		t.Fatal("expected the retry to fail the same way")
+	}
+	if got := getInstance(t, fakeClient).ResourceVersion; got != resourceVersion {
+		t.Errorf("retry rewrote the instance: resourceVersion %s -> %s", resourceVersion, got)
+	}
+}
+
+// TestReconcile_SubmittedPodNeverReachesTheHost asserts that the Pod the
+// provider submits, after every mutation it makes, carries nothing that reaches
+// the machine running the instance.
+//
+// The general-purpose class runs outside the cell's security profile because a
+// guest kernel confines capabilities, root, and system calls. A guest does not
+// confine host namespaces, host ports, host paths, or a privileged host
+// container, so that exemption is safe only while the provider never produces
+// one. The test uses the largest instance a customer can ask for, including
+// every grantable capability.
+func TestReconcile_SubmittedPodNeverReachesTheHost(t *testing.T) {
+	protocol := core.ProtocolTCP
+	instance := newTestInstance(func(i *computev1alpha.Instance) {
+		i.Labels["customer.example.com/team"] = "platform"
+		i.Spec.Volumes = []computev1alpha.InstanceVolume{
+			{Name: "config", VolumeSource: computev1alpha.VolumeSource{
+				ConfigMap: &core.ConfigMapVolumeSource{LocalObjectReference: core.LocalObjectReference{Name: "app-config"}},
+			}},
+			{Name: "tls", VolumeSource: computev1alpha.VolumeSource{
+				Secret: &core.SecretVolumeSource{SecretName: "app-tls"},
+			}},
+		}
+		i.Spec.Runtime.Sandbox.ImagePullSecrets = []computev1alpha.LocalSecretReference{{Name: "registry"}}
+		i.Spec.Runtime.Sandbox.Containers = []computev1alpha.SandboxContainer{
+			{
+				Name:  testContainerName,
+				Image: "docker.io/library/nginx:1.27",
+				Ports: []computev1alpha.NamedPort{{Name: "http", Port: 80, Protocol: &protocol}},
+				VolumeAttachments: []computev1alpha.VolumeAttachment{
+					{Name: "config", MountPath: ptrTo("/etc/nginx/conf.d")},
+					{Name: "tls", MountPath: ptrTo("/etc/tls")},
+				},
+				SecurityContext: &computev1alpha.SandboxSecurityContext{
+					Capabilities: &computev1alpha.SandboxCapabilities{Add: linuxCapabilities},
+				},
+			},
+			{
+				Name:  "sidecar",
+				Image: "docker.io/library/busybox:1.36",
+				SecurityContext: &computev1alpha.SandboxSecurityContext{
+					Capabilities: &computev1alpha.SandboxCapabilities{
+						Add:  []computev1alpha.Capability{capSysAdmin, capNetAdmin},
+						Drop: []computev1alpha.Capability{computev1alpha.CapabilityAll},
+					},
+				},
+			},
+		}
+	})
+	cfg := &config.KataProvider{
+		DownstreamResourceManagement: config.DownstreamResourceManagementConfig{EnableVPCNetworking: true},
+	}
+
+	var submitted *core.Pod
+	funcs := interceptor.Funcs{
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			if pod, isPod := obj.(*core.Pod); isPod {
+				submitted = pod.DeepCopy()
+			}
+			return c.Create(ctx, obj, opts...)
+		},
+	}
+	reconciler, _ := newInterceptedReconciler(t, cfg, funcs, instance)
+
+	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	if submitted == nil {
+		t.Fatal("expected the provider to submit a pod")
+	}
+
+	spec := submitted.Spec
+	if spec.HostNetwork || spec.HostPID || spec.HostIPC {
+		t.Errorf("pod shares a host namespace: hostNetwork=%v hostPID=%v hostIPC=%v",
+			spec.HostNetwork, spec.HostPID, spec.HostIPC)
+	}
+	if spec.HostUsers != nil && *spec.HostUsers {
+		t.Error("pod explicitly runs in the host user namespace")
+	}
+	for _, volume := range spec.Volumes {
+		if volume.HostPath != nil {
+			t.Errorf("volume %q mounts host path %q", volume.Name, volume.HostPath.Path)
+		}
+	}
+
+	containers := slices.Concat(spec.InitContainers, spec.Containers)
+	for _, ephemeral := range spec.EphemeralContainers {
+		containers = append(containers, core.Container(ephemeral.EphemeralContainerCommon))
+	}
+	if len(containers) != 2 {
+		t.Fatalf("pod has %d containers, want the instance's 2", len(containers))
+	}
+	for _, container := range containers {
+		if security := container.SecurityContext; security != nil && security.Privileged != nil && *security.Privileged {
+			t.Errorf("container %q is privileged", container.Name)
+		}
+		for _, port := range container.Ports {
+			if port.HostPort != 0 || port.HostIP != "" {
+				t.Errorf("container %q binds host port %d on %q", container.Name, port.HostPort, port.HostIP)
+			}
+		}
+	}
+}
+
+func ptrTo[T any](v T) *T {
+	return &v
 }

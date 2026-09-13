@@ -1,0 +1,38 @@
+# A stock nginx image, which cannot start with every capability removed: its
+# entrypoint changes the ownership of its cache directories, and its workers
+# switch to an unprivileged user. The request is the smallest set that lets it
+# serve, written the way a Kubernetes manifest writes it, drop: [ALL] included.
+#
+# A provider claims on the runtime-class label. Compute stamps the label from
+# spec.runtime.class. A test applies an Instance directly, with no compute
+# controllers running, so the test stamps the label itself.
+apiVersion: compute.datumapis.com/v1alpha
+kind: Instance
+metadata:
+  name: capabilities
+  labels:
+    compute.datumapis.com/runtime-class: general-purpose
+spec:
+  runtime:
+    class: general-purpose
+    resources:
+      instanceType: datumcloud/d1-standard-2
+    sandbox:
+      containers:
+        - name: nginx
+          image: docker.io/library/nginx:1.27
+          ports:
+            - name: http
+              port: 80
+          securityContext:
+            capabilities:
+              add:
+                - CHOWN
+                - SETUID
+                - SETGID
+              drop:
+                - ALL
+  networkInterfaces:
+    - name: eth0
+      network:
+        name: default

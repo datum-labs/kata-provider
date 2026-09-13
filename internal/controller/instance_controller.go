@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -258,7 +259,7 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	// Kata handler instead of to the shared-kernel default.
 	desired.Spec.RuntimeClassName = ptr.To(r.runtimeHandler())
 
-	applyPodSecurityContext(&desired.Spec)
+	applyPodSecurityContext(&desired.Spec, instance)
 
 	pod := &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -299,6 +300,9 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 		return controllerutil.SetControllerReference(instance, pod, r.Scheme)
 	})
 	if err != nil {
+		if pod.CreationTimestamp.IsZero() && podCreationDeclined(err) {
+			return ctrl.Result{}, r.reportDeclined(ctx, instance, err)
+		}
 		return ctrl.Result{}, fmt.Errorf("failed to create/update pod for instance %s: %w", instance.Name, err)
 	}
 
@@ -332,22 +336,113 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 // these instances enforces the PodSecurity baseline profile. The fields set
 // here are the ones the restricted profile additionally checks and this class
 // can honour regardless of the image.
-func applyPodSecurityContext(spec *core.PodSpec) {
+//
+// Capabilities always start from nothing. A container gets back the provider's
+// default plus whatever it requested, which compute has already checked against
+// the class's grant.
+func applyPodSecurityContext(spec *core.PodSpec, instance *computev1alpha.Instance) {
 	spec.SecurityContext = &core.PodSecurityContext{
 		SeccompProfile: &core.SeccompProfile{Type: core.SeccompProfileTypeRuntimeDefault},
 	}
 
 	for i := range spec.Containers {
-		spec.Containers[i].SecurityContext = &core.SecurityContext{
+		container := &spec.Containers[i]
+		container.SecurityContext = &core.SecurityContext{
 			AllowPrivilegeEscalation: ptr.To(false),
 			Capabilities: &core.Capabilities{
-				Drop: []core.Capability{"ALL"},
-				// A stock image serving on a privileged port needs this one
-				// capability back, and both PodSecurity profiles permit it.
-				Add: []core.Capability{"NET_BIND_SERVICE"},
+				Drop: []core.Capability{core.Capability(computev1alpha.CapabilityAll)},
+				Add:  containerCapabilityAdds(container, instance),
 			},
 		}
 	}
+}
+
+// defaultCapability is added to every container unless the container drops it
+// by name. A stock image serving on a privileged port needs it, and both
+// PodSecurity profiles permit it.
+const defaultCapability core.Capability = "NET_BIND_SERVICE"
+
+// containerCapabilityAdds returns the sorted union of the provider default and
+// the capabilities the translated container adds.
+//
+// Only a drop that names the default removes it. A drop of ALL does not, because
+// the Pod drops ALL regardless, and common Kubernetes manifests carry drop: [ALL]
+// as boilerplate. Treating it as a removal would take a privileged port away
+// from the images most likely to need one.
+func containerCapabilityAdds(container *core.Container, instance *computev1alpha.Instance) []core.Capability {
+	var add []core.Capability
+	if container.SecurityContext != nil && container.SecurityContext.Capabilities != nil {
+		add = append(add, container.SecurityContext.Capabilities.Add...)
+	}
+	if !dropsByName(instance, container.Name, computev1alpha.Capability(defaultCapability)) {
+		add = append(add, defaultCapability)
+	}
+	slices.Sort(add)
+	return slices.Compact(add)
+}
+
+// dropsByName reports whether the named sandbox container lists the capability
+// in its drop list. The translated Pod cannot answer this, because it always
+// drops ALL.
+func dropsByName(instance *computev1alpha.Instance, containerName string, capability computev1alpha.Capability) bool {
+	if instance.Spec.Runtime.Sandbox == nil {
+		return false
+	}
+	for _, container := range instance.Spec.Runtime.Sandbox.Containers {
+		if container.Name != containerName {
+			continue
+		}
+		if container.SecurityContext == nil || container.SecurityContext.Capabilities == nil {
+			return false
+		}
+		return slices.Contains(container.SecurityContext.Capabilities.Drop, capability)
+	}
+	return false
+}
+
+// podCreationDeclined reports whether the API server refused a new instance Pod
+// on its content, as PodSecurity admission or a validating webhook does. Retrying
+// cannot change that outcome until the cell's policy changes.
+func podCreationDeclined(err error) bool {
+	return apierrors.IsForbidden(err) || apierrors.IsInvalid(err)
+}
+
+// reportDeclined tells the customer that their instance cannot start as
+// configured, then returns an error so the work queue retries with backoff. A
+// cell may yet be reconfigured to admit the instance.
+//
+// The message stays generic because the API server's text names Pods and
+// admission policies, which mean nothing to a customer. The full error goes to
+// the log for operators.
+func (r *InstanceReconciler) reportDeclined(ctx context.Context, instance *computev1alpha.Instance, declined error) error {
+	log.FromContext(ctx).Error(declined, "instance pod declined by the api server", "instance", instance.Name)
+
+	const message = "The location running this instance refused its configuration, " +
+		"such as the Linux capabilities its containers request, so the instance cannot start. " +
+		"The platform keeps retrying."
+
+	base := instance.DeepCopy()
+	changed := meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               computev1alpha.InstanceProgrammed,
+		ObservedGeneration: instance.Generation,
+		Status:             metav1.ConditionFalse,
+		Reason:             computev1alpha.InstanceProgrammedReasonConfigurationError,
+		Message:            message,
+	})
+	changed = meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               computev1alpha.InstanceAvailable,
+		ObservedGeneration: instance.Generation,
+		Status:             metav1.ConditionFalse,
+		Reason:             computev1alpha.InstanceReadyReasonConfigurationError,
+		Message:            message,
+	}) || changed
+
+	if changed {
+		if err := r.Status().Patch(ctx, instance, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to report declined pod for instance %s: %w", instance.Name, err)
+		}
+	}
+	return fmt.Errorf("pod for instance %s was declined: %w", instance.Name, declined)
 }
 
 // podOptions returns the Kata-specific policy that this provider contributes to

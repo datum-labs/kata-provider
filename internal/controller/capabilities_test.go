@@ -3,10 +3,13 @@
 package controller
 
 import (
+	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/yaml"
 
 	computev1alpha "go.datum.net/compute/api/v1alpha"
 	"go.datum.net/compute/pkg/runtimeclass"
@@ -31,6 +34,7 @@ func TestCapabilities(t *testing.T) {
 		{runtimeclass.FeatureSecretVolumes, true, "the kubelet mounts them and shares them into the guest"},
 		{runtimeclass.FeatureEnvFrom, true, "the kubelet resolves them before the container starts"},
 		{runtimeclass.FeatureImagePullSecrets, true, "images are pulled on the host under the named credentials"},
+		{runtimeclass.FeatureContainerCapabilities, true, "a capability acts inside the guest kernel, not on the host"},
 		{runtimeclass.FeatureVirtualMachineRuntime, false, "the guest kernel and image are platform-owned"},
 		{runtimeclass.FeatureDiskVolumes, false, "no cell serving this class runs a storage integration yet"},
 		{runtimeclass.FeatureDeviceVolumeAttachments, false, "a raw device attachment presupposes a disk"},
@@ -95,4 +99,63 @@ func TestCapabilities_UnsupportedRequestsAreRejected(t *testing.T) {
 			}
 		})
 	}
+}
+
+// registeredClassPath is the RuntimeClass this repository registers for the
+// class, relative to this package.
+const registeredClassPath = "../../config/components/runtime_classes/general-purpose.yaml"
+
+// TestCapabilities_MatchRegisteredClass fails when the compiled declaration and
+// the registered RuntimeClass drift apart. Compute validates instances against
+// the registered object, and this provider builds Pods against the compiled
+// one, so a drift either rejects what the provider could serve or admits what
+// it would refuse.
+func TestCapabilities_MatchRegisteredClass(t *testing.T) {
+	raw, err := os.ReadFile(registeredClassPath)
+	if err != nil {
+		t.Fatalf("failed to read the registered class: %v", err)
+	}
+	var class computev1alpha.RuntimeClass
+	if err := yaml.UnmarshalStrict(raw, &class); err != nil {
+		t.Fatalf("failed to parse the registered class: %v", err)
+	}
+
+	registered := runtimeclass.CapabilitiesFrom(&class)
+	if registered.Class != Capabilities.Class {
+		t.Errorf("registered class = %q, compiled class = %q", registered.Class, Capabilities.Class)
+	}
+	if got, want := sorted(registered.Features), sorted(Capabilities.Features); !slices.Equal(got, want) {
+		t.Errorf("registered features = %v, compiled features = %v", got, want)
+	}
+	if got, want := sorted(registered.GrantableCapabilities), sorted(Capabilities.GrantableCapabilities); !slices.Equal(got, want) {
+		t.Errorf("registered grantable capabilities = %v, compiled = %v", got, want)
+	}
+}
+
+// TestCapabilities_GrantsEveryLinuxCapability pins the decision that a
+// general-purpose container may request any Linux capability, because the guest
+// kernel confines it. Narrowing the set is a change to what customers are
+// promised.
+func TestCapabilities_GrantsEveryLinuxCapability(t *testing.T) {
+	const linuxCapabilityCount = 41
+
+	unique := slices.Compact(sorted(Capabilities.GrantableCapabilities))
+	if len(unique) != linuxCapabilityCount || len(Capabilities.GrantableCapabilities) != linuxCapabilityCount {
+		t.Fatalf("grantable capabilities = %d (%d unique), want every one of the %d Linux capabilities",
+			len(Capabilities.GrantableCapabilities), len(unique), linuxCapabilityCount)
+	}
+	for _, capability := range []runtimeclass.Capability{capChown, capSetuid, capSetgid, "DAC_OVERRIDE", capSysAdmin, capNetAdmin} {
+		if !Capabilities.Grants(capability) {
+			t.Errorf("Grants(%s) = false, want true", capability)
+		}
+	}
+	if Capabilities.Grants(computev1alpha.CapabilityAll) {
+		t.Error("Grants(ALL) = true; a container must name what it needs")
+	}
+}
+
+func sorted[S ~[]E, E ~string](s S) S {
+	out := slices.Clone(s)
+	slices.Sort(out)
+	return out
 }

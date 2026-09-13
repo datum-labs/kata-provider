@@ -42,7 +42,32 @@ var Capabilities = runtimeclass.Capabilities{
 		// The container runtime pulls images on the host, under the credentials
 		// that the Pod names, exactly as it does for a shared-kernel container.
 		runtimeclass.FeatureImagePullSecrets,
+
+		// A stock image often needs a capability or two to start, for example
+		// to change file ownership. See linuxCapabilities for why the class
+		// grants every one.
+		runtimeclass.FeatureContainerCapabilities,
 	},
+	GrantableCapabilities: linuxCapabilities,
+}
+
+// linuxCapabilities is every Linux capability, which is what the class grants.
+//
+// A general-purpose instance is a virtual machine, so a capability acts on the
+// customer's own guest kernel rather than on the host. That boundary is why the
+// class sits outside the cell's security profile. What would reach the host is
+// not a capability but a Pod field, such as a host namespace, host port, or host
+// path, and the provider never sets one. See
+// TestReconcile_SubmittedPodNeverReachesTheHost.
+var linuxCapabilities = []runtimeclass.Capability{
+	"AUDIT_CONTROL", "AUDIT_READ", "AUDIT_WRITE", "BLOCK_SUSPEND", "BPF",
+	"CHECKPOINT_RESTORE", "CHOWN", "DAC_OVERRIDE", "DAC_READ_SEARCH", "FOWNER",
+	"FSETID", "IPC_LOCK", "IPC_OWNER", "KILL", "LEASE", "LINUX_IMMUTABLE",
+	"MAC_ADMIN", "MAC_OVERRIDE", "MKNOD", "NET_ADMIN", "NET_BIND_SERVICE",
+	"NET_BROADCAST", "NET_RAW", "PERFMON", "SETFCAP", "SETGID", "SETPCAP",
+	"SETUID", "SYSLOG", "SYS_ADMIN", "SYS_BOOT", "SYS_CHROOT", "SYS_MODULE",
+	"SYS_NICE", "SYS_PACCT", "SYS_PTRACE", "SYS_RAWIO", "SYS_RESOURCE",
+	"SYS_TIME", "SYS_TTY_CONFIG", "WAKE_ALARM",
 }
 
 // Features that this class does not declare, and why. Each entry is a
