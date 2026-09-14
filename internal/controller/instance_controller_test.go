@@ -5,6 +5,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -17,6 +18,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	computev1alpha "go.datum.net/compute/api/v1alpha"
+	"go.datum.net/compute/pkg/instancepod"
 	"go.datum.net/compute/pkg/instancetype"
 
 	"go.datum.net/kata-provider/internal/config"
@@ -914,6 +918,108 @@ func TestReconcile_DeclinedPodIsReportedOnTheInstance(t *testing.T) {
 	}
 	if got := getInstance(t, fakeClient).ResourceVersion; got != resourceVersion {
 		t.Errorf("retry rewrote the instance: resourceVersion %s -> %s", resourceVersion, got)
+	}
+}
+
+// TestReconcile_RefusedConfigurationIsReportedOnTheInstance covers an instance
+// the class refuses before any Pod exists, as staging saw with add: [ALL,
+// CAP_CHOWN]. Retrying cannot fix the request, so the customer must see how to
+// fix it, and the provider must not retry until the instance changes.
+func TestReconcile_RefusedConfigurationIsReportedOnTheInstance(t *testing.T) {
+	instance := newTestInstance(func(i *computev1alpha.Instance) {
+		i.Spec.Runtime.Sandbox.Containers[0].SecurityContext = &computev1alpha.SandboxSecurityContext{
+			Capabilities: &computev1alpha.SandboxCapabilities{
+				Add: []computev1alpha.Capability{computev1alpha.CapabilityAll, "CAP_CHOWN"},
+			},
+		}
+	})
+	reconciler, fakeClient := newReconciler(t, nil, instance)
+
+	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
+		t.Fatalf("expected no error, so a refused configuration is not retried: %v", err)
+	}
+	if _, found := getPod(t, fakeClient); found {
+		t.Fatal("expected no pod for a refused configuration")
+	}
+
+	updated := getInstance(t, fakeClient)
+	for _, conditionType := range []string{computev1alpha.InstanceProgrammed, computev1alpha.InstanceAvailable} {
+		condition := apimeta.FindStatusCondition(updated.Status.Conditions, conditionType)
+		if condition == nil {
+			t.Fatalf("expected a %s condition", conditionType)
+		}
+		if condition.Status != metav1.ConditionFalse {
+			t.Errorf("%s status = %s, want False", conditionType, condition.Status)
+		}
+		if condition.Reason != computev1alpha.InstanceProgrammedReasonConfigurationError {
+			t.Errorf("%s reason = %q, want %q", conditionType, condition.Reason,
+				computev1alpha.InstanceProgrammedReasonConfigurationError)
+		}
+		for _, want := range []string{"list each capability", `"CHOWN"`} {
+			if !strings.Contains(condition.Message, want) {
+				t.Errorf("%s message %q does not tell the customer how to fix the request (%q)", conditionType, condition.Message, want)
+			}
+		}
+		for _, noise := range []string{"Pod", "pod", "spec.runtime", "WAKE_ALARM"} {
+			if strings.Contains(condition.Message, noise) {
+				t.Errorf("%s message %q carries internals or noise (%q)", conditionType, condition.Message, noise)
+			}
+		}
+	}
+	t.Logf("customer message: %s",
+		apimeta.FindStatusCondition(updated.Status.Conditions, computev1alpha.InstanceProgrammed).Message)
+
+	// A repeat reconcile, such as a resync, writes nothing new.
+	resourceVersion := updated.ResourceVersion
+	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
+		t.Fatalf("expected the repeat reconcile to succeed: %v", err)
+	}
+	if got := getInstance(t, fakeClient).ResourceVersion; got != resourceVersion {
+		t.Errorf("repeat reconcile rewrote the instance: resourceVersion %s -> %s", resourceVersion, got)
+	}
+}
+
+// TestBuildRefusalMessage pins which build errors are the customer's to fix. A
+// misclassified transient error would strand an instance until its spec
+// changed.
+func TestBuildRefusalMessage(t *testing.T) {
+	instance := newTestInstance()
+	cases := []struct {
+		name        string
+		err         error
+		wantRefused bool
+	}{
+		{
+			name: "class validation",
+			err: field.ErrorList{field.Forbidden(field.NewPath("spec", "volumes").Index(0).Child("disk"),
+				`disk-backed volumes are not supported by the "general-purpose" runtime class`)}.ToAggregate(),
+			wantRefused: true,
+		},
+		{
+			name:        "host path volume",
+			err:         fmt.Errorf("runtime class %q resolved volume %q: %w", RuntimeClassName, "data", instancepod.ErrHostPathVolume),
+			wantRefused: true,
+		},
+		{
+			name: "transient api error",
+			err: fmt.Errorf("failed to resolve volume %q: %w", "data",
+				apierrors.NewServiceUnavailable("etcd leader changed")),
+		},
+		{
+			name: "aggregate holding a transient error",
+			err:  utilerrors.NewAggregate([]error{apierrors.NewTimeoutError("slow", 1)}),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			message, refused := buildRefusalMessage(instance, tc.err)
+			if refused != tc.wantRefused {
+				t.Fatalf("refused = %t, want %t", refused, tc.wantRefused)
+			}
+			if refused && (message == "" || strings.Contains(message, "Pod") || strings.Contains(message, "pod")) {
+				t.Errorf("message %q is empty or names Pods", message)
+			}
+		})
 	}
 }
 
