@@ -4,6 +4,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -16,6 +17,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -251,6 +254,12 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 
 	desired, err := instancepod.BuildPod(instance, r.podOptions(instance))
 	if err != nil {
+		// A refused request fails identically on every retry. Changing it
+		// changes the instance spec, which triggers reconciliation again.
+		if message, refused := buildRefusalMessage(instance, err); refused {
+			logger.Info("instance configuration refused by its runtime class", "instance", instance.Name, "reason", err.Error())
+			return ctrl.Result{}, r.reportConfigurationError(ctx, instance, message)
+		}
 		return ctrl.Result{}, fmt.Errorf("failed to build pod for instance %s: %w", instance.Name, err)
 	}
 
@@ -421,6 +430,16 @@ func (r *InstanceReconciler) reportDeclined(ctx context.Context, instance *compu
 		"such as the Linux capabilities its containers request, so the instance cannot start. " +
 		"The platform keeps retrying."
 
+	if err := r.reportConfigurationError(ctx, instance, message); err != nil {
+		return err
+	}
+	return fmt.Errorf("pod for instance %s was declined: %w", instance.Name, declined)
+}
+
+// reportConfigurationError marks the instance not programmed and not available
+// because of its configuration. It writes only on change, so a repeat reconcile
+// does not churn status.
+func (r *InstanceReconciler) reportConfigurationError(ctx context.Context, instance *computev1alpha.Instance, message string) error {
 	base := instance.DeepCopy()
 	changed := meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
 		Type:               computev1alpha.InstanceProgrammed,
@@ -439,10 +458,99 @@ func (r *InstanceReconciler) reportDeclined(ctx context.Context, instance *compu
 
 	if changed {
 		if err := r.Status().Patch(ctx, instance, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
-			return fmt.Errorf("failed to report declined pod for instance %s: %w", instance.Name, err)
+			return fmt.Errorf("failed to report configuration error for instance %s: %w", instance.Name, err)
 		}
 	}
-	return fmt.Errorf("pod for instance %s was declined: %w", instance.Name, declined)
+	return nil
+}
+
+// buildRefusalMessage reports whether BuildPod refused the instance on its
+// content, and if so returns the message the customer sees. Only a refusal is
+// safe to stop retrying on. Any other error, such as a failed API read, may
+// clear on its own.
+func buildRefusalMessage(instance *computev1alpha.Instance, err error) (string, bool) {
+	switch {
+	case errors.Is(err, instancepod.ErrHostPathVolume):
+		return "The instance requests a volume the platform cannot attach, so the instance cannot start.", true
+	case errors.Is(err, instancepod.ErrNotSandbox):
+		return "The instance declares no containers to run, so the instance cannot start.", true
+	}
+
+	// Class validation is the only source of field errors in the build. An
+	// aggregate holding anything else is not known to be the customer's to fix.
+	var aggregate utilerrors.Aggregate
+	if !errors.As(err, &aggregate) || len(aggregate.Errors()) == 0 {
+		return "", false
+	}
+	hints := capabilityHints(instance)
+	var problems []string
+	for _, item := range aggregate.Errors() {
+		var fieldErr *field.Error
+		if !errors.As(item, &fieldErr) {
+			return "", false
+		}
+		problem, ok := hints[fieldErr.Field]
+		if !ok {
+			problem = asSentence(fieldErr.Detail)
+		}
+		if !slices.Contains(problems, problem) {
+			problems = append(problems, problem)
+		}
+	}
+	return "The instance cannot start as configured. " + strings.Join(problems, " "), true
+}
+
+// capabilityHints maps each capability add the class refuses, keyed by its field
+// path, to a fix the customer can apply. The class's own rejection lists every
+// capability it grants. For this class that is all of them, which buries the
+// actual mistake: ALL, or a CAP_-prefixed name.
+func capabilityHints(instance *computev1alpha.Instance) map[string]string {
+	hints := map[string]string{}
+	if instance.Spec.Runtime.Sandbox == nil {
+		return hints
+	}
+	containersPath := field.NewPath("spec", "runtime", "sandbox", "containers")
+	for i, container := range instance.Spec.Runtime.Sandbox.Containers {
+		if container.SecurityContext == nil || container.SecurityContext.Capabilities == nil {
+			continue
+		}
+		addPath := containersPath.Index(i).Child("securityContext", "capabilities", "add")
+		for j, capability := range container.SecurityContext.Capabilities.Add {
+			if Capabilities.Grants(capability) {
+				continue
+			}
+			hints[addPath.Index(j).String()] = capabilityHint(container.Name, capability)
+		}
+	}
+	return hints
+}
+
+// capabilityHint mirrors the wording compute uses when it checks a capability
+// request's shape at apply time.
+func capabilityHint(container string, capability computev1alpha.Capability) string {
+	name := string(capability)
+	trimmed, prefixed := strings.CutPrefix(name, "CAP_")
+	switch {
+	case capability == computev1alpha.CapabilityAll:
+		return fmt.Sprintf("Container %q may not add ALL; list each capability the container needs.", container)
+	case prefixed:
+		return fmt.Sprintf("Container %q must name %s without the CAP_ prefix, for example %q.", container, name, trimmed)
+	default:
+		return fmt.Sprintf("Container %q requests %s, which %s does not grant.", container, name, Capabilities.ClassDescription())
+	}
+}
+
+// asSentence turns a field error detail, which compute already words for the
+// customer, into a sentence that can follow another.
+func asSentence(detail string) string {
+	if detail == "" {
+		return "The runtime class does not support part of the request."
+	}
+	sentence := strings.ToUpper(detail[:1]) + detail[1:]
+	if !strings.HasSuffix(sentence, ".") {
+		sentence += "."
+	}
+	return sentence
 }
 
 // podOptions returns the Kata-specific policy that this provider contributes to

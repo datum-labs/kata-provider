@@ -60,6 +60,9 @@ cluster it runs in must already provide:
    `privileged_without_host_devices` set, so that even a privileged guest
    receives no host devices. Until a cell is exempted, an instance that requests a capability
    the profile refuses reports a configuration error rather than starting.
+   A request the class itself refuses, such as adding `ALL` or a `CAP_`-prefixed
+   name, also reports a configuration error that says how to fix it; the
+   provider then waits for the instance to change instead of retrying.
 5. **The compute CRDs**, which are owned and published by the compute control
    plane, not by this repository.
 
