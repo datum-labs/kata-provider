@@ -2,12 +2,7 @@
 
 package controller
 
-import (
-	"k8s.io/utils/ptr"
-
-	computev1alpha "go.datum.net/compute/api/v1alpha"
-	"go.datum.net/compute/pkg/runtimeclass"
-)
+import "go.datum.net/compute/pkg/runtimeclass"
 
 // RuntimeClassName is the class this provider serves. A provider names its own
 // class, because a class name compiled into the platform would be a tier the
@@ -48,46 +43,12 @@ var Capabilities = runtimeclass.Capabilities{
 
 		// A stock image often needs a capability or two to start, for example
 		// to change file ownership. The class grants a small set by default
-		// and permits any Linux capability on request. See
-		// DefaultSecurityContext and linuxCapabilities.
+		// and permits any Linux capability on request. The default set is
+		// published as spec.defaultSecurityContext on the registered
+		// RuntimeClass; linuxCapabilities below is what may be requested.
 		runtimeclass.FeatureContainerCapabilities,
 	},
 	GrantableCapabilities: linuxCapabilities,
-}
-
-// DefaultSecurityContext is the security configuration the class grants a
-// container that states none. Compute writes it onto the stored container at
-// admission, so a customer reads the confinement their container runs with on
-// their own workload rather than inferring it from what the provider does.
-//
-// The capability set is Docker's default set less the four that reach past an
-// ordinary application: NET_RAW, SYS_CHROOT, MKNOD, and AUDIT_WRITE. What
-// remains is what nginx, Postgres, and any image that uses gosu or su-exec to
-// drop from root to a service account need in order to start. A container
-// needing more names it, and the class grants every Linux capability to a
-// container that asks.
-//
-// The value is the same declaration as spec.defaultSecurityContext in the
-// registered RuntimeClass. See TestCapabilities_MatchRegisteredClass.
-var DefaultSecurityContext = &computev1alpha.RuntimeClassSecurityContext{
-	Capabilities: &computev1alpha.RuntimeClassDefaultCapabilities{
-		Add: []runtimeclass.Capability{
-			"CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL",
-			"NET_BIND_SERVICE", "SETFCAP", "SETGID", "SETPCAP", "SETUID",
-		},
-	},
-
-	// Dropping from root to a service account needs no escalation, so denying
-	// it costs a stock image nothing. A container relying on a setuid helper
-	// states otherwise for itself.
-	AllowPrivilegeEscalation: ptr.To(false),
-
-	// The container runtime's own profile blocks the system calls an
-	// application has no use for. A container needing an unfiltered kernel
-	// states Unconfined.
-	SeccompProfile: &computev1alpha.SandboxSeccompProfile{
-		Type: computev1alpha.SeccompProfileTypeRuntimeDefault,
-	},
 }
 
 // linuxCapabilities is every Linux capability, which is what the class grants.

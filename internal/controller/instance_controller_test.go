@@ -809,7 +809,7 @@ func TestReconcile_ContainerCapabilities(t *testing.T) {
 			name: "the class default reaches the container as stated",
 			stated: &computev1alpha.SandboxSecurityContext{
 				Capabilities: &computev1alpha.SandboxCapabilities{
-					Add:  defaultCapabilityRequest(),
+					Add:  defaultCapabilityRequest(t),
 					Drop: []computev1alpha.Capability{computev1alpha.CapabilityAll},
 				},
 			},
@@ -970,9 +970,12 @@ func TestReconcile_ContainerConfinementComesFromTheInstance(t *testing.T) {
 }
 
 // defaultCapabilityRequest is the class's published default, in the form a
-// container states it.
-func defaultCapabilityRequest() []computev1alpha.Capability {
-	return slices.Clone(DefaultSecurityContext.Capabilities.Add)
+// container states it. It reads the registered RuntimeClass, which is where the
+// default is declared.
+func defaultCapabilityRequest(t *testing.T) []computev1alpha.Capability {
+	t.Helper()
+
+	return slices.Clone(registeredDefaultSecurityContext(t).Capabilities.Add)
 }
 
 // TestReconcile_DeclinedPodIsReportedOnTheInstance covers a cell that refuses
