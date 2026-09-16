@@ -84,6 +84,38 @@ spec:
       own virtual machine. Storage lives with the instance: durable disks and raw device
       attachments are not offered yet, and neither is booting a
       customer-supplied virtual machine image.
+  # The security configuration a container in this class gets when it states
+  # none. The platform writes these values onto the container at admission, so a
+  # customer reads what their container runs with on their own workload instead
+  # of inferring it from provider behaviour.
+  #
+  # The capability set is Docker's default set less the four that reach past an
+  # ordinary application: NET_RAW, SYS_CHROOT, MKNOD, and AUDIT_WRITE. What
+  # remains is what nginx, Postgres, and any image that uses gosu or su-exec to
+  # drop from root to a service account need in order to start. A container that
+  # needs more asks for it by name.
+  defaultSecurityContext:
+    capabilities:
+      add:
+        - CHOWN
+        - DAC_OVERRIDE
+        - FOWNER
+        - FSETID
+        - KILL
+        - NET_BIND_SERVICE
+        - SETFCAP
+        - SETGID
+        - SETPCAP
+        - SETUID
+    # Dropping from root to a service account needs no escalation, so denying it
+    # costs a stock image nothing. A container relying on a setuid helper states
+    # otherwise for itself.
+    allowPrivilegeEscalation: false
+    # The container runtime's own profile blocks the system calls an application
+    # has no use for. A container needing an unfiltered kernel states Unconfined.
+    seccompProfile:
+      type: RuntimeDefault
+
   lifecycle:
     description: >-
       Instances take several seconds to start, dominated by booting a kernel and

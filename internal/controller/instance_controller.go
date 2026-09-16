@@ -268,7 +268,7 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	// Kata handler instead of to the shared-kernel default.
 	desired.Spec.RuntimeClassName = ptr.To(r.runtimeHandler())
 
-	applyPodSecurityContext(&desired.Spec, instance)
+	applyPodSecurityContext(&desired.Spec)
 
 	pod := &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -332,81 +332,30 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	return ctrl.Result{}, nil
 }
 
-// applyPodSecurityContext hardens an instance Pod to what a cell's PodSecurity
-// admission asks of a workload.
+// applyPodSecurityContext sets the Pod-level confinement of an instance's
+// sandbox.
 //
-// A Kata guest needs no privilege on the host. The hypervisor is the isolation
-// boundary, and the workload inside the guest runs under the same container
-// security context it would run under on a shared kernel.
+// Only what is not a customer choice is set here. Container confinement —
+// capabilities, privilege escalation, and the seccomp profile — comes from the
+// Instance, so a customer reads on their own workload exactly what their
+// container runs with. A value the provider added would be a privilege nobody
+// could see or remove.
+//
+// The seccomp profile confines the sandbox itself and applies to any container
+// that states none. A container that states one overrides it, so stating it
+// here overrules nothing a customer asked for. A cell's PodSecurity admission
+// reads the field on the Pod, and so does an operator auditing what the
+// provider submits.
 //
 // runAsNonRoot is deliberately absent. The general-purpose class exists to run
 // stock container images, and many of them start as root. Setting the field
 // would fail exactly the images the class promises to run, so a cell hosting
-// these instances enforces the PodSecurity baseline profile. The fields set
-// here are the ones the restricted profile additionally checks and this class
-// can honour regardless of the image.
-//
-// Capabilities always start from nothing. A container gets back the provider's
-// default plus whatever it requested, which compute has already checked against
-// the class's grant.
-func applyPodSecurityContext(spec *core.PodSpec, instance *computev1alpha.Instance) {
+// these instances enforces the PodSecurity baseline profile rather than
+// restricted.
+func applyPodSecurityContext(spec *core.PodSpec) {
 	spec.SecurityContext = &core.PodSecurityContext{
 		SeccompProfile: &core.SeccompProfile{Type: core.SeccompProfileTypeRuntimeDefault},
 	}
-
-	for i := range spec.Containers {
-		container := &spec.Containers[i]
-		container.SecurityContext = &core.SecurityContext{
-			AllowPrivilegeEscalation: ptr.To(false),
-			Capabilities: &core.Capabilities{
-				Drop: []core.Capability{core.Capability(computev1alpha.CapabilityAll)},
-				Add:  containerCapabilityAdds(container, instance),
-			},
-		}
-	}
-}
-
-// defaultCapability is added to every container unless the container drops it
-// by name. A stock image serving on a privileged port needs it, and both
-// PodSecurity profiles permit it.
-const defaultCapability core.Capability = "NET_BIND_SERVICE"
-
-// containerCapabilityAdds returns the sorted union of the provider default and
-// the capabilities the translated container adds.
-//
-// Only a drop that names the default removes it. A drop of ALL does not, because
-// the Pod drops ALL regardless, and common Kubernetes manifests carry drop: [ALL]
-// as boilerplate. Treating it as a removal would take a privileged port away
-// from the images most likely to need one.
-func containerCapabilityAdds(container *core.Container, instance *computev1alpha.Instance) []core.Capability {
-	var add []core.Capability
-	if container.SecurityContext != nil && container.SecurityContext.Capabilities != nil {
-		add = append(add, container.SecurityContext.Capabilities.Add...)
-	}
-	if !dropsByName(instance, container.Name, computev1alpha.Capability(defaultCapability)) {
-		add = append(add, defaultCapability)
-	}
-	slices.Sort(add)
-	return slices.Compact(add)
-}
-
-// dropsByName reports whether the named sandbox container lists the capability
-// in its drop list. The translated Pod cannot answer this, because it always
-// drops ALL.
-func dropsByName(instance *computev1alpha.Instance, containerName string, capability computev1alpha.Capability) bool {
-	if instance.Spec.Runtime.Sandbox == nil {
-		return false
-	}
-	for _, container := range instance.Spec.Runtime.Sandbox.Containers {
-		if container.Name != containerName {
-			continue
-		}
-		if container.SecurityContext == nil || container.SecurityContext.Capabilities == nil {
-			return false
-		}
-		return slices.Contains(container.SecurityContext.Capabilities.Drop, capability)
-	}
-	return false
 }
 
 // podCreationDeclined reports whether the API server refused a new instance Pod

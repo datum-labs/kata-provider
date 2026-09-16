@@ -2,9 +2,7 @@
 
 package controller
 
-import (
-	"go.datum.net/compute/pkg/runtimeclass"
-)
+import "go.datum.net/compute/pkg/runtimeclass"
 
 // RuntimeClassName is the class this provider serves. A provider names its own
 // class, because a class name compiled into the platform would be a tier the
@@ -44,8 +42,10 @@ var Capabilities = runtimeclass.Capabilities{
 		runtimeclass.FeatureImagePullSecrets,
 
 		// A stock image often needs a capability or two to start, for example
-		// to change file ownership. See linuxCapabilities for why the class
-		// grants every one.
+		// to change file ownership. The class grants a small set by default
+		// and permits any Linux capability on request. The default set is
+		// published as spec.defaultSecurityContext on the registered
+		// RuntimeClass; linuxCapabilities below is what may be requested.
 		runtimeclass.FeatureContainerCapabilities,
 	},
 	GrantableCapabilities: linuxCapabilities,

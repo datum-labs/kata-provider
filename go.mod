@@ -6,7 +6,7 @@ require (
 	// Pinned to a compute commit rather than a release, because the runtime
 	// class contract this provider implements is newer than the latest tag.
 	// Repin to a stable go.datum.net/compute tag once one carries it.
-	go.datum.net/compute v0.8.0-dev.12.0.20260912232219-f68dd08f5a81
+	go.datum.net/compute v0.8.0-dev.12.0.20260916024357-ff46dececa94
 	go.datum.net/network-services-operator v0.26.5-0.20260911235442-196ee79e9ebf
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
@@ -15,7 +15,10 @@ require (
 	sigs.k8s.io/controller-runtime v0.24.1
 )
 
-require sigs.k8s.io/yaml v1.6.0
+require (
+	github.com/google/go-cmp v0.7.0
+	sigs.k8s.io/yaml v1.6.0
+)
 
 require (
 	cel.dev/expr v0.25.2 // indirect
