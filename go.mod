@@ -6,7 +6,7 @@ require (
 	// Pinned to a compute commit rather than a release, because the runtime
 	// class contract this provider implements is newer than the latest tag.
 	// Repin to a stable go.datum.net/compute tag once one carries it.
-	go.datum.net/compute v0.8.0-dev.12.0.20260912232219-f68dd08f5a81
+	go.datum.net/compute v0.8.0-dev.12.0.20260916024357-ff46dececa94
 	go.datum.net/network-services-operator v0.26.5-0.20260911235442-196ee79e9ebf
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
@@ -108,8 +108,3 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
 )
-
-// TEMPORARY: compute's published-default security context branch is not pushed
-// yet. This MUST be swapped for a real commit pin on go.datum.net/compute
-// before the pull request is opened.
-replace go.datum.net/compute => /Users/scotwells/repos/datum-cloud/compute/.claude/worktrees/bridge-cse_01Mi8RNFiKWxzEzRsgJYQPX6
