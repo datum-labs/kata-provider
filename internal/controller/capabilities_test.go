@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/yaml"
 
@@ -111,16 +112,7 @@ const registeredClassPath = "../../config/components/runtime_classes/general-pur
 // one, so a drift either rejects what the provider could serve or admits what
 // it would refuse.
 func TestCapabilities_MatchRegisteredClass(t *testing.T) {
-	raw, err := os.ReadFile(registeredClassPath)
-	if err != nil {
-		t.Fatalf("failed to read the registered class: %v", err)
-	}
-	var class computev1alpha.RuntimeClass
-	if err := yaml.UnmarshalStrict(raw, &class); err != nil {
-		t.Fatalf("failed to parse the registered class: %v", err)
-	}
-
-	registered := runtimeclass.CapabilitiesFrom(&class)
+	registered := runtimeclass.CapabilitiesFrom(readRegisteredClass(t))
 	if registered.Class != Capabilities.Class {
 		t.Errorf("registered class = %q, compiled class = %q", registered.Class, Capabilities.Class)
 	}
@@ -129,6 +121,59 @@ func TestCapabilities_MatchRegisteredClass(t *testing.T) {
 	}
 	if got, want := sorted(registered.GrantableCapabilities), sorted(Capabilities.GrantableCapabilities); !slices.Equal(got, want) {
 		t.Errorf("registered grantable capabilities = %v, compiled = %v", got, want)
+	}
+}
+
+// TestCapabilities_DefaultSecurityContextMatchesRegisteredClass fails when the
+// compiled default and the published one drift apart. The published value is
+// what a customer reads and what compute stamps onto their container, so a
+// drift would have the class promise one confinement and the provider expect
+// another.
+func TestCapabilities_DefaultSecurityContextMatchesRegisteredClass(t *testing.T) {
+	registered := readRegisteredClass(t).Spec.DefaultSecurityContext
+	if registered == nil {
+		t.Fatal("the registered class publishes no default security context")
+	}
+	if diff := cmp.Diff(DefaultSecurityContext, registered); diff != "" {
+		t.Errorf("registered default security context differs from the compiled one (-compiled +registered):\n%s", diff)
+	}
+}
+
+// TestCapabilities_DefaultSecurityContextIsGrantable pins that every capability
+// the class grants by default is one a customer could also request. A default
+// outside the grantable set would be a privilege only the platform can hand
+// out, which is the invisible grant the published default replaces.
+func TestCapabilities_DefaultSecurityContextIsGrantable(t *testing.T) {
+	for _, capability := range DefaultSecurityContext.Capabilities.Add {
+		if !Capabilities.Grants(capability) {
+			t.Errorf("Grants(%s) = false; the class grants it by default but would refuse the request", capability)
+		}
+	}
+}
+
+// TestCapabilities_DefaultSecurityContextStaysMinimal pins the decision behind
+// the default set: Docker's default capabilities less the four that reach past
+// an ordinary application. Widening it grants every customer a privilege they
+// did not ask for, so any change here is deliberate.
+func TestCapabilities_DefaultSecurityContextStaysMinimal(t *testing.T) {
+	want := []runtimeclass.Capability{
+		"CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL",
+		"NET_BIND_SERVICE", "SETGID", "SETPCAP", "SETUID",
+	}
+	if got := sorted(DefaultSecurityContext.Capabilities.Add); !slices.Equal(got, want) {
+		t.Errorf("default capabilities = %v, want %v", got, want)
+	}
+	for _, withheld := range []runtimeclass.Capability{"NET_RAW", "SYS_CHROOT", "MKNOD", "AUDIT_WRITE"} {
+		if slices.Contains(DefaultSecurityContext.Capabilities.Add, withheld) {
+			t.Errorf("%s is granted by default; it reaches past an ordinary application and must be requested", withheld)
+		}
+	}
+	if DefaultSecurityContext.AllowPrivilegeEscalation == nil || *DefaultSecurityContext.AllowPrivilegeEscalation {
+		t.Error("expected privilege escalation to be denied by default")
+	}
+	if DefaultSecurityContext.SeccompProfile == nil ||
+		DefaultSecurityContext.SeccompProfile.Type != computev1alpha.SeccompProfileTypeRuntimeDefault {
+		t.Error("expected the runtime's own seccomp profile by default")
 	}
 }
 
@@ -152,6 +197,21 @@ func TestCapabilities_GrantsEveryLinuxCapability(t *testing.T) {
 	if Capabilities.Grants(computev1alpha.CapabilityAll) {
 		t.Error("Grants(ALL) = true; a container must name what it needs")
 	}
+}
+
+// readRegisteredClass parses the RuntimeClass this repository registers.
+func readRegisteredClass(t *testing.T) *computev1alpha.RuntimeClass {
+	t.Helper()
+
+	raw, err := os.ReadFile(registeredClassPath)
+	if err != nil {
+		t.Fatalf("failed to read the registered class: %v", err)
+	}
+	var class computev1alpha.RuntimeClass
+	if err := yaml.UnmarshalStrict(raw, &class); err != nil {
+		t.Fatalf("failed to parse the registered class: %v", err)
+	}
+	return &class
 }
 
 func sorted[S ~[]E, E ~string](s S) S {

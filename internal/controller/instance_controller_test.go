@@ -27,6 +27,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	computev1alpha "go.datum.net/compute/api/v1alpha"
+	"k8s.io/utils/ptr"
+
 	"go.datum.net/compute/pkg/instancepod"
 	"go.datum.net/compute/pkg/instancetype"
 
@@ -756,74 +758,78 @@ func TestReconcile_PodSecurityContext(t *testing.T) {
 	if security == nil {
 		t.Fatal("expected the instance container to carry a security context")
 	}
-	if security.AllowPrivilegeEscalation == nil || *security.AllowPrivilegeEscalation {
-		t.Error("expected privilege escalation to be denied")
-	}
 	if security.RunAsNonRoot != nil {
 		t.Error("expected the provider to leave the user of a stock image alone")
 	}
+
+	// Confinement a customer can state is the instance's to decide. This
+	// instance states none, so the provider decides none either.
+	if security.AllowPrivilegeEscalation != nil {
+		t.Errorf("allowPrivilegeEscalation = %v, want it left to the instance",
+			*security.AllowPrivilegeEscalation)
+	}
+	if got := security.Capabilities.Add; len(got) != 0 {
+		t.Errorf("capabilities.add = %v, want nothing the instance did not state", got)
+	}
 }
 
-// TestReconcile_ContainerCapabilities covers how a customer's capability
-// request combines with the provider's default. Every container drops ALL, so a
-// capability the container runs with is exactly one in add.
+// TestReconcile_ContainerCapabilities covers the promise that an instance runs
+// the confinement it states and nothing more. The class publishes what a
+// container gets when it states nothing, and compute stamps that onto the
+// container, so a capability the provider added here would be one no customer
+// could read on their own workload.
 func TestReconcile_ContainerCapabilities(t *testing.T) {
+	// The confinement compute writes onto a container that states none. A test
+	// applies instances with no admission running, so it states them itself.
+	defaultedAdds := []core.Capability{
+		"CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL",
+		"NET_BIND_SERVICE", "SETGID", "SETPCAP", "SETUID",
+	}
+
 	tests := []struct {
 		name    string
-		request *computev1alpha.SandboxCapabilities
+		stated  *computev1alpha.SandboxSecurityContext
 		wantAdd []core.Capability
 	}{
 		{
-			name:    "a container with no request keeps the privileged-port default",
-			wantAdd: []core.Capability{defaultCapability},
+			name:    "a container that states nothing is granted nothing",
+			wantAdd: nil,
 		},
 		{
-			name: "requested capabilities are added alongside the default",
-			request: &computev1alpha.SandboxCapabilities{
-				Add: []computev1alpha.Capability{capSetuid, capChown, capSetgid},
+			name: "a stated request reaches the container unchanged",
+			stated: &computev1alpha.SandboxSecurityContext{
+				Capabilities: &computev1alpha.SandboxCapabilities{
+					Add:  []computev1alpha.Capability{capSetuid, capChown, capSetgid},
+					Drop: []computev1alpha.Capability{computev1alpha.CapabilityAll},
+				},
 			},
-			wantAdd: []core.Capability{capChown, defaultCapability, capSetgid, capSetuid},
+			wantAdd: []core.Capability{capChown, capSetgid, capSetuid},
 		},
 		{
-			name: "dropping the default by name removes it",
-			request: &computev1alpha.SandboxCapabilities{
-				Add:  []computev1alpha.Capability{capChown},
-				Drop: []computev1alpha.Capability{computev1alpha.Capability(defaultCapability)},
+			name: "the class default reaches the container as stated",
+			stated: &computev1alpha.SandboxSecurityContext{
+				Capabilities: &computev1alpha.SandboxCapabilities{
+					Add:  defaultCapabilityRequest(),
+					Drop: []computev1alpha.Capability{computev1alpha.CapabilityAll},
+				},
 			},
-			wantAdd: []core.Capability{capChown},
-		},
-		{
-			name: "dropping ALL, as Kubernetes manifests commonly do, keeps the default",
-			request: &computev1alpha.SandboxCapabilities{
-				Drop: []computev1alpha.Capability{computev1alpha.CapabilityAll},
-			},
-			wantAdd: []core.Capability{defaultCapability},
-		},
-		{
-			name: "requesting the default explicitly does not duplicate it",
-			request: &computev1alpha.SandboxCapabilities{
-				Add:  []computev1alpha.Capability{computev1alpha.Capability(defaultCapability), capChown},
-				Drop: []computev1alpha.Capability{computev1alpha.CapabilityAll},
-			},
-			wantAdd: []core.Capability{capChown, defaultCapability},
+			wantAdd: defaultedAdds,
 		},
 		{
 			name: "a capability that acts only inside the guest kernel is granted",
-			request: &computev1alpha.SandboxCapabilities{
-				Add: []computev1alpha.Capability{capSysAdmin},
+			stated: &computev1alpha.SandboxSecurityContext{
+				Capabilities: &computev1alpha.SandboxCapabilities{
+					Add: []computev1alpha.Capability{capSysAdmin},
+				},
 			},
-			wantAdd: []core.Capability{defaultCapability, capSysAdmin},
+			wantAdd: []core.Capability{capSysAdmin},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			instance := newTestInstance(func(i *computev1alpha.Instance) {
-				if tc.request != nil {
-					i.Spec.Runtime.Sandbox.Containers[0].SecurityContext = &computev1alpha.SandboxSecurityContext{
-						Capabilities: tc.request,
-					}
-				}
+				i.Spec.Runtime.Sandbox.Containers[0].SecurityContext = tc.stated
 			})
 			reconciler, fakeClient := newReconciler(t, nil, instance)
 
@@ -845,11 +851,128 @@ func TestReconcile_ContainerCapabilities(t *testing.T) {
 			if got := security.Capabilities.Add; !slices.Equal(got, tc.wantAdd) {
 				t.Errorf("capabilities.add = %v, want %v", got, tc.wantAdd)
 			}
-			if security.AllowPrivilegeEscalation == nil || *security.AllowPrivilegeEscalation {
-				t.Error("expected privilege escalation to stay denied")
+		})
+	}
+}
+
+// TestReconcile_ProviderGrantsNothingTheInstanceDidNotState is the guarantee a
+// customer relies on when they read their workload: every capability on the
+// Pod appears on the Instance. A privilege the platform adds here is one the
+// customer cannot see, audit, or remove.
+func TestReconcile_ProviderGrantsNothingTheInstanceDidNotState(t *testing.T) {
+	stated := []computev1alpha.Capability{capChown}
+
+	instance := newTestInstance(func(i *computev1alpha.Instance) {
+		i.Spec.Runtime.Sandbox.Containers[0].SecurityContext = &computev1alpha.SandboxSecurityContext{
+			Capabilities: &computev1alpha.SandboxCapabilities{
+				Add:  stated,
+				Drop: []computev1alpha.Capability{computev1alpha.CapabilityAll},
+			},
+		}
+	})
+	reconciler, fakeClient := newReconciler(t, nil, instance)
+
+	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	pod, found := getPod(t, fakeClient)
+	if !found {
+		t.Fatal("expected the instance to be backed by a pod")
+	}
+
+	for _, granted := range pod.Spec.Containers[0].SecurityContext.Capabilities.Add {
+		if !slices.Contains(stated, computev1alpha.Capability(granted)) {
+			t.Errorf("the pod grants %s, which the instance does not state", granted)
+		}
+	}
+	if !slices.Contains(pod.Spec.Containers[0].SecurityContext.Capabilities.Add, core.Capability(capChown)) {
+		t.Errorf("capabilities.add = %v, want the stated %s to reach the pod",
+			pod.Spec.Containers[0].SecurityContext.Capabilities.Add, capChown)
+	}
+}
+
+// TestReconcile_ContainerConfinementComesFromTheInstance covers the fields a
+// container states alongside its capabilities. Each is a customer choice the
+// class publishes a default for, so the provider carries the stated value
+// rather than deciding again.
+func TestReconcile_ContainerConfinementComesFromTheInstance(t *testing.T) {
+	tests := []struct {
+		name           string
+		stated         *computev1alpha.SandboxSecurityContext
+		wantEscalation *bool
+		wantSeccomp    *core.SeccompProfileType
+	}{
+		{
+			name: "a stated denial of escalation reaches the container",
+			stated: &computev1alpha.SandboxSecurityContext{
+				AllowPrivilegeEscalation: ptr.To(false),
+				SeccompProfile: &computev1alpha.SandboxSeccompProfile{
+					Type: computev1alpha.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			wantEscalation: ptr.To(false),
+			wantSeccomp:    ptr.To(core.SeccompProfileTypeRuntimeDefault),
+		},
+		{
+			name: "a container that needs escalation is not overruled",
+			stated: &computev1alpha.SandboxSecurityContext{
+				AllowPrivilegeEscalation: ptr.To(true),
+				SeccompProfile: &computev1alpha.SandboxSeccompProfile{
+					Type: computev1alpha.SeccompProfileTypeUnconfined,
+				},
+			},
+			wantEscalation: ptr.To(true),
+			wantSeccomp:    ptr.To(core.SeccompProfileTypeUnconfined),
+		},
+		{
+			name:   "a container that states neither has neither decided for it",
+			stated: &computev1alpha.SandboxSecurityContext{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			instance := newTestInstance(func(i *computev1alpha.Instance) {
+				i.Spec.Runtime.Sandbox.Containers[0].SecurityContext = tc.stated
+			})
+			reconciler, fakeClient := newReconciler(t, nil, instance)
+
+			if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
+				t.Fatalf("reconcile failed: %v", err)
+			}
+
+			pod, found := getPod(t, fakeClient)
+			if !found {
+				t.Fatal("expected the instance to be backed by a pod")
+			}
+			security := pod.Spec.Containers[0].SecurityContext
+
+			switch {
+			case tc.wantEscalation == nil && security.AllowPrivilegeEscalation != nil:
+				t.Errorf("allowPrivilegeEscalation = %v, want it left to the instance",
+					*security.AllowPrivilegeEscalation)
+			case tc.wantEscalation != nil && (security.AllowPrivilegeEscalation == nil ||
+				*security.AllowPrivilegeEscalation != *tc.wantEscalation):
+				t.Errorf("allowPrivilegeEscalation = %v, want %v",
+					security.AllowPrivilegeEscalation, *tc.wantEscalation)
+			}
+
+			switch {
+			case tc.wantSeccomp == nil && security.SeccompProfile != nil:
+				t.Errorf("seccompProfile = %v, want it left to the instance", security.SeccompProfile)
+			case tc.wantSeccomp != nil && (security.SeccompProfile == nil ||
+				security.SeccompProfile.Type != *tc.wantSeccomp):
+				t.Errorf("seccompProfile = %v, want %v", security.SeccompProfile, *tc.wantSeccomp)
 			}
 		})
 	}
+}
+
+// defaultCapabilityRequest is the class's published default, in the form a
+// container states it.
+func defaultCapabilityRequest() []computev1alpha.Capability {
+	return slices.Clone(DefaultSecurityContext.Capabilities.Add)
 }
 
 // TestReconcile_DeclinedPodIsReportedOnTheInstance covers a cell that refuses

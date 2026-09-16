@@ -6,20 +6,21 @@ metadata:
     tier: portable
 spec:
   description: |
-    Proves that a customer can run a stock image that needs Linux capabilities
-    to start, by asking for them on the container.
+    Proves that an instance runs the security configuration its workload states,
+    and nothing more.
 
-    nginx is the case that motivated the feature: with every capability removed
-    it cannot change the ownership of its cache directories and exits on boot.
-    The suite asserts on what a customer or an operator would notice:
+    nginx is the case that motivated the published default: with every
+    capability removed it cannot change the ownership of its cache directories
+    and exits on boot. The instance states the general-purpose class's published
+    default, which is what compute writes onto a container that states none. The
+    suite asserts on what a customer or an operator would notice:
 
-      - The class this repository registers is accepted by compute's schema,
-        so every capability name it grants is one compute recognizes.
-      - The instance runs with drop: [ALL] and exactly the requested
-        capabilities plus the privileged-port default. The customer's
-        drop: [ALL] does not take that default away.
-      - Privilege escalation stays denied, so a capability request relaxes
-        nothing else.
+      - The class this repository registers is accepted by compute's schema, so
+        every capability name it publishes and grants is one compute recognizes.
+      - The container runs with drop: [ALL] and exactly the capabilities the
+        workload states, with nothing added by the platform.
+      - Privilege escalation and the seccomp profile are the ones the workload
+        states.
       - The instance is available, has not restarted, and serves.
 
   template: true
@@ -40,10 +41,11 @@ spec:
         - apply:
             file: instance.yaml
 
-    - name: assert-capabilities-are-granted
+    - name: assert-the-container-runs-what-it-states
       description: |
-        The container drops everything and adds back the request and the
-        default, and nothing else about its security context is relaxed.
+        The container drops everything and adds back exactly what the workload
+        states. A capability here that the instance does not state would be one
+        the customer cannot read, audit, or remove.
       try:
         - assert:
             resource:
@@ -57,13 +59,20 @@ spec:
                   - name: nginx
                     securityContext:
                       allowPrivilegeEscalation: false
+                      seccompProfile:
+                        type: RuntimeDefault
                       capabilities:
                         drop:
                           - ALL
                         add:
                           - CHOWN
+                          - DAC_OVERRIDE
+                          - FOWNER
+                          - FSETID
+                          - KILL
                           - NET_BIND_SERVICE
                           - SETGID
+                          - SETPCAP
                           - SETUID
               status:
                 phase: Running
@@ -71,6 +80,22 @@ spec:
                   - name: nginx
                     ready: true
                     restartCount: 0
+
+    - name: assert-nothing-was-added
+      description: |
+        The assertion above matches a list by content, so it would also pass if
+        the platform had added a capability. Counting them closes that gap.
+      try:
+        - script:
+            content: |
+              granted=$(kubectl -n "$NAMESPACE" get pod capabilities \
+                -o jsonpath='{.spec.containers[0].securityContext.capabilities.add[*]}')
+              count=$(echo $granted | wc -w | tr -d ' ')
+              if [ "$count" != "9" ]; then
+                echo "the pod grants $count capabilities, want the 9 the instance states: $granted" >&2
+                exit 1
+              fi
+              echo "the pod grants only what the instance states"
 
     - name: assert-instance-is-available
       try:

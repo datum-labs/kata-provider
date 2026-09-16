@@ -81,13 +81,14 @@ spec:
                 containers:
                   - name: app
                     image: docker.io/library/busybox:1.36
+                    # The instance states no security context, so its container
+                    # gets nothing beyond the floor every sandbox container runs
+                    # at. A capability here would be one the platform granted
+                    # invisibly.
                     securityContext:
-                      allowPrivilegeEscalation: false
                       capabilities:
                         drop:
                           - ALL
-                        add:
-                          - NET_BIND_SERVICE
                     resources:
                       requests:
                         cpu: "1"

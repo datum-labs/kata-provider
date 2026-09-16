@@ -18,7 +18,7 @@ What this class offers, and what it does not:
 | | |
 | --- | --- |
 | **Isolation** | A per-instance kernel and virtual machine boundary, not a shared kernel. |
-| **Compatibility** | Ordinary Linux container images. No position-independent binary requirement, no RAM-resident root filesystem. A container can request any Linux capability its image needs, such as `CHOWN` or `SETUID`, and the capability applies only inside the instance's own virtual machine. |
+| **Compatibility** | Ordinary Linux container images. No position-independent binary requirement, no RAM-resident root filesystem. The class publishes the capabilities it grants by default — enough for a stock image to start — and a container can request any other Linux capability it needs. A capability applies only inside the instance's own virtual machine. |
 | **Startup** | Slower than the unikernel class: a guest kernel boots per instance. |
 | **Not served** | Virtual machine instances booting a customer-supplied image, and disk-backed volumes. Both are refused at apply time, naming the class, rather than quietly dropped. |
 
@@ -46,23 +46,39 @@ cluster it runs in must already provide:
    which `kata-deploy` applies to every node it has installed the runtime on.
    Override the selector, and add tolerations, in the provider's config.
 4. **Namespaces that exempt instances of this class from the PodSecurity
-   profile the cell enforces.** Instance Pods select a seccomp profile, deny
-   privilege escalation, and drop every capability, then add back
-   `NET_BIND_SERVICE` and whatever capabilities the customer's containers
-   request. `restricted` permits only `NET_BIND_SERVICE` and refuses the root
-   user most stock images start as, and `baseline` refuses any capability
-   outside its short default list, such as `SYS_ADMIN` or `NET_ADMIN`.
+   profile the cell enforces.** The class publishes the security configuration
+   it grants a container that asks for nothing, and the platform writes that
+   configuration onto the container, so a customer reads on their own workload
+   exactly what their instance runs with. The provider adds nothing of its own.
+
+   The published default drops every capability and adds back nine: `CHOWN`,
+   `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `KILL`, `NET_BIND_SERVICE`, `SETGID`,
+   `SETPCAP`, `SETUID`. That is Docker's default capability set less the four
+   that reach past an ordinary application — `NET_RAW`, `SYS_CHROOT`, `MKNOD`,
+   `AUDIT_WRITE` — and it is what nginx, Postgres, and any image that uses
+   `gosu` or `su-exec` to drop from root to a service account need in order to
+   start. Privilege escalation is denied and the runtime's own seccomp profile
+   applies. A container needing anything beyond that asks for it, and the class
+   grants any Linux capability on request.
+
+   A cell's profile must therefore admit those nine capabilities and the root
+   user that most stock images start as, plus whatever a customer's containers
+   request. `restricted` permits only `NET_BIND_SERVICE` and refuses root, and
+   `baseline` refuses any capability outside its own short list, such as
+   `SYS_ADMIN` or `NET_ADMIN`, so instance namespaces are exempted from the
+   cell's profile.
+
    The exemption is safe because an instance is a virtual machine: capabilities,
    root, and system calls act on the guest kernel, not the host. What a guest
    does not confine is host namespaces, host ports, host paths, and privileged
    host containers, and the provider never produces any of them; a unit test
    pins that. Keep the Kata runtime handler's
    `privileged_without_host_devices` set, so that even a privileged guest
-   receives no host devices. Until a cell is exempted, an instance that requests a capability
-   the profile refuses reports a configuration error rather than starting.
-   A request the class itself refuses, such as adding `ALL` or a `CAP_`-prefixed
-   name, also reports a configuration error that says how to fix it; the
-   provider then waits for the instance to change instead of retrying.
+   receives no host devices. Until a cell is exempted, an instance that requests
+   a capability the profile refuses reports a configuration error rather than
+   starting. A request the class itself refuses, such as adding `ALL` or a
+   `CAP_`-prefixed name, also reports a configuration error that says how to fix
+   it; the provider then waits for the instance to change instead of retrying.
 5. **The compute CRDs**, which are owned and published by the compute control
    plane, not by this repository.
 

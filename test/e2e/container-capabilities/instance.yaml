@@ -1,11 +1,15 @@
 # A stock nginx image, which cannot start with every capability removed: its
 # entrypoint changes the ownership of its cache directories, and its workers
-# switch to an unprivileged user. The request is the smallest set that lets it
-# serve, written the way a Kubernetes manifest writes it, drop: [ALL] included.
+# switch to an unprivileged user.
+#
+# The security context below is what compute writes onto a container that states
+# none: the general-purpose class's published default. Compute's admission
+# webhook does not run in a cell, and a test applies an Instance directly, so the
+# test states the default itself, exactly as a customer would read it back on
+# their own workload.
 #
 # A provider claims on the runtime-class label. Compute stamps the label from
-# spec.runtime.class. A test applies an Instance directly, with no compute
-# controllers running, so the test stamps the label itself.
+# spec.runtime.class, so the test stamps it too.
 apiVersion: compute.datumapis.com/v1alpha
 kind: Instance
 metadata:
@@ -26,12 +30,21 @@ spec:
               port: 80
           securityContext:
             capabilities:
-              add:
-                - CHOWN
-                - SETUID
-                - SETGID
               drop:
                 - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+                - FSETID
+                - KILL
+                - NET_BIND_SERVICE
+                - SETGID
+                - SETPCAP
+                - SETUID
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
   networkInterfaces:
     - name: eth0
       network:
