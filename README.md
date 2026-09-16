@@ -45,11 +45,11 @@ cluster it runs in must already provide:
 3. **Labelled nodes.** Instance Pods select `katacontainers.io/kata-runtime=true`,
    which `kata-deploy` applies to every node it has installed the runtime on.
    Override the selector, and add tolerations, in the provider's config.
-4. **Namespaces that exempt instances of this class from the PodSecurity
-   profile the cell enforces.** The class publishes the security configuration
-   it grants a container that asks for nothing, and the platform writes that
-   configuration onto the container, so a customer reads on their own workload
-   exactly what their instance runs with. The provider adds nothing of its own.
+4. **A cell that exempts this runtime class from the PodSecurity profile it
+   enforces.** The class publishes the security configuration it grants a
+   container that asks for nothing, and the platform writes that configuration
+   onto the container, so a customer reads on their own workload exactly what
+   their instance runs with. The provider adds nothing of its own.
 
    The published default drops every capability and adds back nine: `CHOWN`,
    `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `KILL`, `NET_BIND_SERVICE`, `SETGID`,
@@ -61,12 +61,15 @@ cluster it runs in must already provide:
    applies. A container needing anything beyond that asks for it, and the class
    grants any Linux capability on request.
 
-   A cell's profile must therefore admit those nine capabilities and the root
-   user that most stock images start as, plus whatever a customer's containers
-   request. `restricted` permits only `NET_BIND_SERVICE` and refuses root, and
-   `baseline` refuses any capability outside its own short list, such as
-   `SYS_ADMIN` or `NET_ADMIN`, so instance namespaces are exempted from the
-   cell's profile.
+   Those nine sit inside what `baseline` already permits, so the published
+   default starts on an unexempted cell. A cell's profile must still admit the
+   root user that most stock images start as, and whatever a customer's
+   containers request beyond the baseline list, such as `SYS_ADMIN` or
+   `NET_ADMIN`. `restricted` permits only `NET_BIND_SERVICE` and refuses root.
+   A cell therefore exempts the Kata runtime class itself, through the API
+   server's PodSecurity admission configuration, rather than exempting
+   namespaces: the exemption then covers exactly the Pods that run in a virtual
+   machine and leaves every other Pod in the same tenant namespace enforced.
 
    The exemption is safe because an instance is a virtual machine: capabilities,
    root, and system calls act on the guest kernel, not the host. What a guest
