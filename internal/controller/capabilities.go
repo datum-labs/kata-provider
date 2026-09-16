@@ -73,7 +73,7 @@ var DefaultSecurityContext = &computev1alpha.RuntimeClassSecurityContext{
 	Capabilities: &computev1alpha.RuntimeClassDefaultCapabilities{
 		Add: []runtimeclass.Capability{
 			"CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL",
-			"NET_BIND_SERVICE", "SETGID", "SETPCAP", "SETUID",
+			"NET_BIND_SERVICE", "SETFCAP", "SETGID", "SETPCAP", "SETUID",
 		},
 	},
 

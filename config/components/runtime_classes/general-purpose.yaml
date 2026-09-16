@@ -103,6 +103,7 @@ spec:
         - FSETID
         - KILL
         - NET_BIND_SERVICE
+        - SETFCAP
         - SETGID
         - SETPCAP
         - SETUID

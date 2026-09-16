@@ -158,7 +158,7 @@ func TestCapabilities_DefaultSecurityContextIsGrantable(t *testing.T) {
 func TestCapabilities_DefaultSecurityContextStaysMinimal(t *testing.T) {
 	want := []runtimeclass.Capability{
 		"CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL",
-		"NET_BIND_SERVICE", "SETGID", "SETPCAP", "SETUID",
+		"NET_BIND_SERVICE", "SETFCAP", "SETGID", "SETPCAP", "SETUID",
 	}
 	if got := sorted(DefaultSecurityContext.Capabilities.Add); !slices.Equal(got, want) {
 		t.Errorf("default capabilities = %v, want %v", got, want)

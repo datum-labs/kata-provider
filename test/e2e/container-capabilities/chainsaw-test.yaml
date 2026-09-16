@@ -71,6 +71,7 @@ spec:
                           - FSETID
                           - KILL
                           - NET_BIND_SERVICE
+                          - SETFCAP
                           - SETGID
                           - SETPCAP
                           - SETUID
@@ -91,8 +92,8 @@ spec:
               granted=$(kubectl -n "$NAMESPACE" get pod capabilities \
                 -o jsonpath='{.spec.containers[0].securityContext.capabilities.add[*]}')
               count=$(echo $granted | wc -w | tr -d ' ')
-              if [ "$count" != "9" ]; then
-                echo "the pod grants $count capabilities, want the 9 the instance states: $granted" >&2
+              if [ "$count" != "10" ]; then
+                echo "the pod grants $count capabilities, want the 10 the instance states: $granted" >&2
                 exit 1
               fi
               echo "the pod grants only what the instance states"

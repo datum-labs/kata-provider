@@ -783,7 +783,7 @@ func TestReconcile_ContainerCapabilities(t *testing.T) {
 	// applies instances with no admission running, so it states them itself.
 	defaultedAdds := []core.Capability{
 		"CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL",
-		"NET_BIND_SERVICE", "SETGID", "SETPCAP", "SETUID",
+		"NET_BIND_SERVICE", "SETFCAP", "SETGID", "SETPCAP", "SETUID",
 	}
 
 	tests := []struct {
