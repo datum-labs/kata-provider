@@ -3,11 +3,8 @@ module go.datum.net/kata-provider
 go 1.26.4
 
 require (
-	// Pinned to a compute commit rather than a release, because the runtime
-	// class contract this provider implements is newer than the latest tag.
-	// Repin to a stable go.datum.net/compute tag once one carries it.
-	go.datum.net/compute v0.8.0-dev.12.0.20260916153540-a81c5922bb24
-	go.datum.net/network-services-operator v0.26.5-0.20260911235442-196ee79e9ebf
+	go.datum.net/compute v0.8.0
+	go.datum.net/network-services-operator v0.27.0
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
 	k8s.io/client-go v0.36.1
@@ -64,7 +61,7 @@ require (
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	go.miloapis.com/locations v0.0.0-20260825185141-507ac2cbd48c // indirect
+	go.miloapis.com/locations v0.0.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/otel v1.44.0 // indirect
