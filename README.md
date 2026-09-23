@@ -97,7 +97,11 @@ config/overlays/dev      a single dev cluster: RBAC and a locally declared Runti
 config/overlays/runtime-rs-installer   places the Kata runtime-rs shim on Talos nodes
 ```
 
+Create the provider namespace before applying the cell or dev overlay; neither
+creates it automatically.
+
 ```bash
+kubectl create namespace kata-provider-system
 kubectl apply -k config/overlays/cell
 ```
 
@@ -119,6 +123,10 @@ untouched.
 The overlay is independent of the provider overlays: it targets nodes rather
 than the control plane, needs a namespace that admits privileged pods, and only
 belongs on a cell whose machine image carries the Kata extension.
+
+Create `kata-runtime-install` with privileged Pod Security first, or explicitly
+include `config/components/runtime_rs_namespace` in a standalone overlay.
+Datum's infra repository owns this namespace.
 
 ```bash
 kubectl apply -k config/overlays/runtime-rs-installer

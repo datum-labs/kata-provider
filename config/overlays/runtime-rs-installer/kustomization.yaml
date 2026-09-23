@@ -4,10 +4,11 @@ kind: Kustomization
 # Ships separately from the provider overlay. This writes to node filesystems,
 # runs privileged, and is only correct on a node whose machine image carries the
 # Kata system extension. A cell opts into it independently.
+# The deploying platform must provide this namespace with privileged Pod
+# Security. Namespace creation is opt-in via components/runtime_rs_namespace.
 namespace: kata-runtime-install
 
 resources:
-  - namespace.yaml
   - daemonset.yaml
 
 configMapGenerator:

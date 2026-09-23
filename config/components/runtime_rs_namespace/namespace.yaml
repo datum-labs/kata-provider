@@ -1,3 +1,5 @@
+# Optional namespace for standalone installs. Platforms that own namespaces
+# must supply it themselves rather than including this component.
 # The installer writes to the host filesystem, so it needs a namespace that
 # admits a privileged pod. The provider's own namespace stays on the restricted
 # baseline.
