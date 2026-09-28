@@ -1,0 +1,60 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: compute-node-collector
+spec:
+  config:
+    processors:
+      k8sattributes/kata:
+        auth_type: serviceAccount
+        wait_for_metadata: true
+        wait_for_metadata_timeout: 60s
+        filter:
+          node_from_env_var: K8S_NODE_NAME
+          labels:
+            - key: managed-by
+              value: kata-provider
+              op: equals
+            - key: telemetry.miloapis.com/otlp-native-logs
+              value: "true"
+              op: equals
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.uid
+        extract:
+          metadata: [k8s.namespace.name, k8s.pod.name, k8s.pod.uid, k8s.node.name]
+          labels:
+            - tag_name: datum.instance.name
+              key: upstream.instance
+              from: pod
+            - tag_name: datum.workload.name
+              key: compute.datumapis.com/workload-name
+              from: pod
+            - tag_name: datum.instance.namespace
+              key: meta.datumapis.com/upstream-namespace
+              from: namespace
+            - tag_name: datum.project.name
+              key: resourcemanager.miloapis.com/project-name
+              from: namespace
+      # Never route records with missing ownership to the gateway's internal
+      # fallback tenant. Application log bodies remain opaque text.
+      filter/kata:
+        error_mode: propagate
+        logs:
+          log_record:
+            - 'resource.attributes["datum.project.name"] == nil or resource.attributes["datum.project.name"] == ""'
+            - 'resource.attributes["datum.instance.namespace"] == nil or resource.attributes["datum.instance.namespace"] == ""'
+            - 'resource.attributes["datum.instance.name"] == nil or resource.attributes["datum.instance.name"] == ""'
+      resource/kata:
+        attributes:
+          # The gateway routes by project_name; datum.* serves compute queries.
+          - key: project_name
+            from_attribute: datum.project.name
+            action: upsert
+    service:
+      pipelines:
+        logs/kata:
+          receivers: [filelog/kubernetes]
+          processors: [memory_limiter, k8sattributes/kata, filter/kata, resource/kata]
+          exporters: [otlp_grpc/project]

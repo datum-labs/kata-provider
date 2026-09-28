@@ -71,8 +71,8 @@ const (
 
 	managedByValue = "kata-provider"
 
-	// nativeLogsLabel excludes instance Pods from the shared node collector
-	// when kata-telemetry owns collection and forwards their logs over OTLP.
+	// nativeLogsLabel transfers instance Pods from the generic platform log
+	// pipeline to the Kata pipeline in the shared compute node collector.
 	nativeLogsLabel = "telemetry.miloapis.com/otlp-native-logs"
 )
 

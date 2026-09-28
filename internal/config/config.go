@@ -163,11 +163,11 @@ type DownstreamResourceManagementConfig struct {
 	// +default=false
 	EnableVPCNetworking bool `json:"enableVPCNetworking,omitempty"`
 
-	// InstanceLogs hands application log collection to the kata-telemetry
-	// collector. The provider labels instance Pods so the shared node collector
-	// skips them, preventing duplicate ingestion. Deploy kata-telemetry on every
-	// instance node before enabling this setting. It does not install a
-	// collector or grant users access to logs.
+	// InstanceLogs routes application logs through the Kata pipeline in the
+	// shared compute node collector. The provider labels instance Pods so the
+	// generic platform pipeline skips them. Deploy the shared collector with
+	// components/node-telemetry on every instance node before enabling this
+	// setting. It does not install a collector or grant users access to logs.
 	//
 	// +optional
 	// +default=false

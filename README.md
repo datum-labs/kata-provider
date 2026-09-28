@@ -95,7 +95,7 @@ config/components/       opt-in pieces: controller_rbac, leader_election, kata_r
 config/overlays/cell     what a cell runs: leader election, RBAC, control-plane scheduling
 config/overlays/dev      a single dev cluster: RBAC and a locally declared RuntimeClass
 config/overlays/runtime-rs-installer   places the Kata runtime-rs shim on Talos nodes
-config/dependencies/kata-telemetry    optional instance application-log collector
+config/components/node-telemetry     Kata pipeline for the shared compute collector
 ```
 
 Create the provider namespace before applying the cell or dev overlay; neither
@@ -113,14 +113,13 @@ leaves the controller wedged on a denied informer.
 
 ## Instance logs
 
-The optional [instance log collector](config/dependencies/kata-telemetry/README.md)
-sends application standard output and standard error to Datum's project log
-service, preserving instance, container, and project identity. Deploy it on
-every Kata compute node before setting
-`downstreamResourceManagement.instanceLogs: true` in the provider configuration.
-This setting transfers collection from the shared node collector to the Kata
-collector. The deployment guide covers prerequisites, rollout checks, and
-delivery limits.
+The optional [node telemetry component](config/components/node-telemetry/README.md)
+adds a Kata pipeline to the shared compute collector. It sends application
+output to Datum's project log service with instance, container, and project
+identity. Infra composes this component with the platform collector base and
+other runtime components. After that collector is ready on every Kata node,
+set `downstreamResourceManagement.instanceLogs: true` to enable the Kata
+pipeline for instance Pods. The component does not deploy another collector.
 
 ## Installing the runtime-rs shim on Talos
 

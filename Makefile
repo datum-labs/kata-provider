@@ -61,9 +61,9 @@ test: manifests generate fmt vet ## Run tests.
 	go test ./... -coverprofile cover.out
 
 .PHONY: test-telemetry
-test-telemetry: ## Test instance logs with the pinned collector (set OTELCOL_BIN).
+test-telemetry: kustomize ## Test instance logs with the pinned collector (set OTELCOL_BIN).
 	@test -n "$(OTELCOL_BIN)" || { echo "Set OTELCOL_BIN to the OpenTelemetry contrib 0.144.0 executable"; exit 1; }
-	OTELCOL_BIN="$(OTELCOL_BIN)" go test ./test/telemetry -count=1 -v
+	OTELCOL_BIN="$(OTELCOL_BIN)" KUSTOMIZE_BIN="$(KUSTOMIZE)" go test ./test/telemetry -count=1 -v
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

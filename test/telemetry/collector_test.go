@@ -3,9 +3,11 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/yaml"
 )
 
@@ -103,7 +106,8 @@ users:
 	t.Cleanup(server.Stop)
 	config := collectorConfig(t, dir)
 	env := append(os.Environ(), "KUBECONFIG="+filepath.Join(dir, "kubeconfig"),
-		"K8S_NODE_NAME=fixture-node", "LOGS_OTLP_ENDPOINT="+listener.Addr().String())
+		"K8S_NODE_NAME=fixture-node", "LOGS_OTLP_ENDPOINT="+listener.Addr().String(),
+		"METRICS_RW_ENDPOINT=http://127.0.0.1:1/api/v1/write")
 
 	appLog := logPath(dir, pods[0], "app", "0.log")
 	write(t, appLog, cri("stdout", "startup-a")+cri("stderr", "crash-a"))
@@ -122,6 +126,7 @@ users:
 
 	process := startCollector(t, binary, config, env)
 	sink.wait(t, "startup-a", "crash-a", "worker-a", "startup-crash-b", spoof, "partial-complete", fixtureStandalone)
+	sink.wait(t, "not-enabled")
 	sink.assertIdentity(t, "startup-a", "project-a", "app", "stdout")
 	sink.assertIdentity(t, "crash-a", "project-a", "app", "stderr")
 	sink.assertIdentity(t, "worker-a", "project-a", "worker", "stdout")
@@ -156,7 +161,7 @@ users:
 	process.stop(t)
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
-	for _, body := range []string{"missing-project", "other-provider", "not-enabled", "other-node"} {
+	for _, body := range []string{"missing-project", "other-provider", "other-node"} {
 		if len(sink.records[body]) != 0 {
 			t.Errorf("exported a record without trusted Kata project identity: %q", body)
 		}
@@ -164,6 +169,10 @@ users:
 	standalone := sink.records[fixtureStandalone][0].resource
 	if standalone["datum.instance.name"] != fixtureStandalone || standalone["project_name"] != "project-a" {
 		t.Errorf("standalone instance identity = %v", standalone)
+	}
+	platform := sink.records["not-enabled"][0].resource
+	if platform["datum.instance.name"] != "" || platform["project_name"] != "" {
+		t.Errorf("Kata enrichment leaked into generic platform output: %v", platform)
 	}
 	for body, records := range sink.records {
 		if len(records) != 1 {
@@ -174,21 +183,79 @@ users:
 
 func collectorConfig(t *testing.T, dir string) string {
 	t.Helper()
-	manifest, err := os.ReadFile("../../config/dependencies/kata-telemetry/collector.yaml")
+	kustomize := os.Getenv("KUSTOMIZE_BIN")
+	if kustomize == "" {
+		kustomize = "kustomize"
+	}
+	buildDir := "fixture"
+	if base := os.Getenv("TELEMETRY_BASE_DIR"); base != "" {
+		// macOS exposes its temporary root through /var -> /private/var.
+		// Kustomize resolves it before resolving relative resource paths.
+		canonicalDir, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buildDir = filepath.Join(canonicalDir, "render")
+		component, err := filepath.Abs("../../config/components/node-telemetry")
+		if err != nil {
+			t.Fatal(err)
+		}
+		base, err = filepath.EvalSymlinks(base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		component, err = filepath.Rel(buildDir, component)
+		if err != nil {
+			t.Fatal(err)
+		}
+		base, err = filepath.Rel(buildDir, base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		config, err := yaml.Marshal(map[string]any{
+			"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization",
+			"resources": []string{base}, "components": []string{component},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, filepath.Join(buildDir, "kustomization.yaml"), string(config))
+	}
+	manifest, err := exec.Command(kustomize, "build", "--load-restrictor=LoadRestrictionsNone", buildDir).CombinedOutput()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("render shared collector with Kata component: %v\n%s", err, manifest)
 	}
 	var document struct {
+		Kind     string `json:"kind"`
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
 		Spec struct {
 			Image  string         `json:"image"`
 			Config map[string]any `json:"config"`
 		} `json:"spec"`
 	}
-	if err := yaml.Unmarshal(manifest, &document); err != nil {
-		t.Fatal(err)
+	decoder := k8syaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifest), 4096)
+	for {
+		if err := decoder.Decode(&document); err != nil {
+			if err == io.EOF {
+				t.Fatal("rendered component has no compute-node-collector")
+			}
+			t.Fatal(err)
+		}
+		if document.Kind == "OpenTelemetryCollector" && document.Metadata.Name == "compute-node-collector" {
+			break
+		}
 	}
 	if !strings.HasSuffix(document.Spec.Image, ":"+collectorVersion) {
 		t.Fatalf("test collector version %s does not match shipped image %s", collectorVersion, document.Spec.Image)
+	}
+	// Keep the generic platform pipeline so the tests also check that one
+	// shared reader does not duplicate or cross-enrich the two outputs.
+	service := document.Spec.Config["service"].(map[string]any)
+	pipelines := service["pipelines"].(map[string]any)
+	if pipelines["logs/kata"] == nil || pipelines["logs/platform"] == nil {
+		t.Fatal("composition needs both logs/platform and logs/kata")
 	}
 	config, err := yaml.Marshal(document.Spec.Config)
 	if err != nil {
