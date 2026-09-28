@@ -1,0 +1,8 @@
+{
+  "contractVersion": 1,
+  "service": "kata",
+  "collectorVersion": "0.144.0",
+  "pipelines": [
+    "logs/kata"
+  ]
+}

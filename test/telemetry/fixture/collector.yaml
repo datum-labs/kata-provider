@@ -1,0 +1,118 @@
+# Platform contract fixture. Also test against TELEMETRY_BASE_DIR before integration.
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: compute-node-collector
+  namespace: o11y-system
+spec:
+  image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.144.0
+  config:
+    extensions:
+      file_storage:
+        directory: /var/lib/otelcol/storage
+        fsync: true
+    receivers:
+      # Shared by platform and provider pipelines: read each CRI file once.
+      filelog/kubernetes:
+        include: [/var/log/pods/*/*/*.log*]
+        exclude:
+          - /var/log/pods/*/*/*.gz
+          - /var/log/pods/o11y-system_*/*/*.log*
+        start_at: beginning
+        include_file_path: true
+        storage: file_storage
+        max_log_size: 1MiB
+        poll_interval: 1s
+        retry_on_failure:
+          enabled: true
+          max_elapsed_time: 0s
+        operators:
+          - type: regex_parser
+            parse_from: attributes["log.file.path"]
+            parse_to: attributes["cri.path"]
+            regex: '^.*/(?P<namespace>[^_/]+)_(?P<pod>[^_/]+)_(?P<uid>[a-f0-9-]{36})/(?P<container>[^/]+)/[0-9]+\.log(?:\..*)?$'
+          - type: move
+            from: attributes["cri.path"].namespace
+            to: resource["k8s.namespace.name"]
+          - type: move
+            from: attributes["cri.path"].pod
+            to: resource["k8s.pod.name"]
+          - type: move
+            from: attributes["cri.path"].uid
+            to: resource["k8s.pod.uid"]
+          - type: move
+            from: attributes["cri.path"].container
+            to: resource["k8s.container.name"]
+          - type: remove
+            field: attributes["cri.path"]
+          - type: container
+            id: container-parser
+            add_metadata_from_filepath: false
+            max_log_size: 1MiB
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 384
+        spike_limit_mib: 96
+      k8sattributes/platform:
+        auth_type: serviceAccount
+        wait_for_metadata: true
+        wait_for_metadata_timeout: 60s
+        filter:
+          node_from_env_var: K8S_NODE_NAME
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.uid
+        extract:
+          metadata: [k8s.namespace.name, k8s.pod.name, k8s.pod.uid, k8s.node.name]
+          labels:
+            - tag_name: telemetry.native_logs
+              key: telemetry.miloapis.com/otlp-native-logs
+              from: pod
+            - tag_name: k8s.namespace.project_name
+              key: resourcemanager.miloapis.com/project-name
+              from: namespace
+            - tag_name: k8s.namespace.upstream_cluster_name
+              key: meta.datumapis.com/upstream-cluster-name
+              from: namespace
+      filter/platform:
+        error_mode: propagate
+        logs:
+          log_record:
+            # Unknown ownership must not bypass a provider's fail-closed filter.
+            - 'resource.attributes["k8s.node.name"] == nil'
+            - 'resource.attributes["telemetry.native_logs"] == "true"'
+      resource/platform:
+        attributes:
+          - key: service.namespace
+            from_attribute: k8s.namespace.name
+            action: insert
+          - key: service.name
+            from_attribute: k8s.container.name
+            action: insert
+    exporters:
+      otlp_grpc/project:
+        endpoint: ${env:LOGS_OTLP_ENDPOINT}
+        tls:
+          insecure: true
+        retry_on_failure:
+          enabled: true
+          max_elapsed_time: 0s
+        sending_queue:
+          enabled: true
+          storage: file_storage
+          sizer: bytes
+          queue_size: 268435456
+          num_consumers: 2
+      prometheusremotewrite/compute:
+        endpoint: ${env:METRICS_RW_ENDPOINT}
+        resource_to_telemetry_conversion:
+          enabled: true
+    service:
+      extensions: [file_storage]
+      pipelines:
+        logs/platform:
+          receivers: [filelog/kubernetes]
+          processors: [memory_limiter, k8sattributes/platform, filter/platform, resource/platform]
+          exporters: [otlp_grpc/project]

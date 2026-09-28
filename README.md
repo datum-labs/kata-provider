@@ -95,6 +95,7 @@ config/components/       opt-in pieces: controller_rbac, leader_election, kata_r
 config/overlays/cell     what a cell runs: leader election, RBAC, control-plane scheduling
 config/overlays/dev      a single dev cluster: RBAC and a locally declared RuntimeClass
 config/overlays/runtime-rs-installer   places the Kata runtime-rs shim on Talos nodes
+config/components/node-telemetry     Kata pipeline for the shared compute collector
 ```
 
 Create the provider namespace before applying the cell or dev overlay; neither
@@ -109,6 +110,16 @@ The ClusterRole in `config/components/controller_rbac/role.yaml` is generated
 from the kubebuilder markers in `internal/`. Change the markers and run
 `make manifests`; a hand-edit there disappears on the next regeneration and
 leaves the controller wedged on a denied informer.
+
+## Instance logs
+
+The [node telemetry component](config/components/node-telemetry/README.md)
+adds a Kata pipeline to the shared compute collector. It sends application
+output to Datum's project log service with instance, container, and project
+identity. Infra composes this component with the platform collector base and
+other runtime components. The provider always marks instance Pods for the Kata
+pipeline. Deploy that collector on every Kata node before rolling out the
+provider. The component does not deploy another collector.
 
 ## Installing the runtime-rs shim on Talos
 
