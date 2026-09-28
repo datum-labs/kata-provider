@@ -115,6 +115,38 @@ func TestVPCNetworkingIsOffByDefault(t *testing.T) {
 	}
 }
 
+func TestInstanceLogsConfig(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := RegisterDefaults(scheme); err != nil {
+		t.Fatal(err)
+	}
+	codecs := serializer.NewCodecFactory(scheme, serializer.EnableStrict)
+	for _, tc := range []struct {
+		name     string
+		settings string
+		want     bool
+	}{
+		{name: "disabled by default", settings: "{}"},
+		{name: "explicitly enabled", settings: "{instanceLogs: true}", want: true},
+		{name: "explicitly disabled", settings: "{instanceLogs: false}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := []byte("apiVersion: apiserver.config.datumapis.com/v1alpha1\n" +
+				"kind: KataProvider\ndownstreamResourceManagement: " + tc.settings + "\n")
+			var cfg KataProvider
+			if err := runtime.DecodeInto(codecs.UniversalDecoder(), data, &cfg); err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.DownstreamResourceManagement.InstanceLogs; got != tc.want {
+				t.Errorf("instanceLogs = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestDefaults checks that a deployment supplying no config file still runs
 // against a named Kata handler rather than the cluster's default runtime, which
 // would silently give tenants a shared kernel.

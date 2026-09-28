@@ -46,6 +46,34 @@ jobs:
           make manifests generate
           git diff --exit-code -- config internal
 
+  telemetry:
+    name: Instance log delivery
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Exercise the shipped collector configuration against local Kubernetes
+      # and OTLP test servers. No cluster or hardware virtualization is needed.
+      - name: Install the collector used by the log bundle
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl --fail --location --retry 3 --output otelcol.tar.gz \
+            https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.144.0/otelcol-contrib_0.144.0_linux_amd64.tar.gz
+          echo '4429eecfb311e35f846af453d46c0a8a72e6773489e8105fb049f5bc9edec022  otelcol.tar.gz' | sha256sum --check
+          tar -xzf otelcol.tar.gz otelcol-contrib
+
+      - name: Verify instance log collection and delivery
+        env:
+          OTELCOL_BIN: ${{ runner.temp }}/otelcol-contrib
+        run: go test -count=1 -timeout=5m ./test/telemetry
+
   lint:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kata-telemetry-system
+  labels:
+    # The collector reads node logs and persists its queue on a hostPath.
+    pod-security.kubernetes.io/enforce: privileged
+    app.kubernetes.io/part-of: kata-provider

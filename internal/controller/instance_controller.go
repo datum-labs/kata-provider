@@ -9,6 +9,7 @@ import (
 	"net"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,6 +70,10 @@ const (
 	instanceLabel  = "upstream.instance"
 
 	managedByValue = "kata-provider"
+
+	// nativeLogsLabel excludes instance Pods from the shared node collector
+	// when kata-telemetry owns collection and forwards their logs over OTLP.
+	nativeLogsLabel = "telemetry.miloapis.com/otlp-native-logs"
 )
 
 // DefaultNodeSelector places instance Pods on nodes where the Kata runtime is
@@ -283,6 +288,12 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 		}
 		for key, value := range desired.Labels {
 			pod.Labels[key] = value
+		}
+
+		if r.Config != nil && r.Config.DownstreamResourceManagement.InstanceLogs {
+			pod.Labels[nativeLogsLabel] = strconv.FormatBool(r.Config.DownstreamResourceManagement.InstanceLogs)
+		} else {
+			delete(pod.Labels, nativeLogsLabel)
 		}
 
 		// Ask for the instance's interfaces to be wired up. Clearing the label
