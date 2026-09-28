@@ -19,9 +19,6 @@ downstreamResourceManagement:
   # controller turns this on, and its instances become reachable from outside
   # the cell.
   enableVPCNetworking: false
-  # Compose components/node-telemetry into the shared compute collector first.
-  # The provider then selects its project-aware pipeline for instance logs.
-  instanceLogs: false
   # nodeSelector and tolerations are left unset: the provider then selects
   # katacontainers.io/kata-runtime=true, the label kata-deploy applies to every
   # node it has installed the runtime on, and adds no toleration. Set them in an

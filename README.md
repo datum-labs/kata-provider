@@ -113,13 +113,13 @@ leaves the controller wedged on a denied informer.
 
 ## Instance logs
 
-The optional [node telemetry component](config/components/node-telemetry/README.md)
+The [node telemetry component](config/components/node-telemetry/README.md)
 adds a Kata pipeline to the shared compute collector. It sends application
 output to Datum's project log service with instance, container, and project
 identity. Infra composes this component with the platform collector base and
-other runtime components. After that collector is ready on every Kata node,
-set `downstreamResourceManagement.instanceLogs: true` to enable the Kata
-pipeline for instance Pods. The component does not deploy another collector.
+other runtime components. The provider always marks instance Pods for the Kata
+pipeline. Deploy that collector on every Kata node before rolling out the
+provider. The component does not deploy another collector.
 
 ## Installing the runtime-rs shim on Talos
 

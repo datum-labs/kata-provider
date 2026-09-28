@@ -9,7 +9,6 @@ import (
 	"net"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -73,7 +72,8 @@ const (
 
 	// nativeLogsLabel transfers instance Pods from the generic platform log
 	// pipeline to the Kata pipeline in the shared compute node collector.
-	nativeLogsLabel = "telemetry.miloapis.com/otlp-native-logs"
+	nativeLogsLabel      = "telemetry.miloapis.com/otlp-native-logs"
+	nativeLogsLabelValue = "true"
 )
 
 // DefaultNodeSelector places instance Pods on nodes where the Kata runtime is
@@ -290,11 +290,9 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 			pod.Labels[key] = value
 		}
 
-		if r.Config != nil && r.Config.DownstreamResourceManagement.InstanceLogs {
-			pod.Labels[nativeLogsLabel] = strconv.FormatBool(r.Config.DownstreamResourceManagement.InstanceLogs)
-		} else {
-			delete(pod.Labels, nativeLogsLabel)
-		}
+		// Instance logs always belong to the project-aware Kata pipeline.
+		// Stamp this after tenant labels, including when updating existing Pods.
+		pod.Labels[nativeLogsLabel] = nativeLogsLabelValue
 
 		// Ask for the instance's interfaces to be wired up. Clearing the label
 		// explicitly takes the opt-in back off Pods that already carry it when

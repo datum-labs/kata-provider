@@ -33,14 +33,15 @@ upstream namespace, or instance identity are discarded.
 2. Deploy and verify the shared collector. Its generic platform pipeline must
    exclude `telemetry.miloapis.com/otlp-native-logs=true`. Retire any previous
    overlapping node collectors through the environment's migration plan.
-3. Set `downstreamResourceManagement.instanceLogs: true` and roll out the
-   provider. It marks instance Pods for the Kata pipeline. The setting remains
-   false by default; publishing this component does not switch production.
+3. Roll out the provider. It always marks new and existing instance Pods for
+   the Kata pipeline; there is no feature flag. Deploying the provider without
+   that pipeline leaves its Pods excluded from generic log collection.
 
-For rollback, disable the setting before removing the component. Keep the
-generic platform pipeline available and drain queued logs. Switching pipelines
-is not atomic; check for gaps and duplicates. Preserve shared collector storage
-across updates.
+Keep the Kata pipeline available while this provider version runs. To return to
+generic collection, roll back the provider and remove its collection label from
+existing instance Pods before removing the component. Drain queued logs first.
+Switching pipelines is not atomic; check for gaps and duplicates. Preserve
+shared collector storage across updates.
 
 ## Delivery and validation
 
