@@ -14,7 +14,8 @@ limits, destinations, and credentials.
 
 Contract version 1 requires Collector Contrib `0.144.0`,
 `filelog/kubernetes`, `memory_limiter`, and `otlp_grpc/project`. Kata adds
-`k8sattributes/kata`, `filter/kata`, `resource/kata`, and `logs/kata`.
+`k8sattributes/kata`, `transform/kata-project`, `filter/kata`,
+`resource/kata`, and `logs/kata`.
 The platform and Kata pipelines share one CRI file reader. See
 [`manifest.json`](manifest.json) for the machine-readable contract.
 
@@ -22,8 +23,12 @@ The Kubernetes Pod UID associates each entry with platform-owned Pod and
 namespace labels. The pipeline preserves timestamps, stream, and container
 name, adds the `datum.*` instance attributes, and sets `project_name` for
 gateway routing. Workload identity is optional for standalone instances.
-Application bodies cannot set routing attributes. Records without project,
-upstream namespace, or instance identity are discarded.
+The namespace's `resourcemanager.miloapis.com/project-name` label takes
+precedence. If it is absent or empty, the pipeline derives the project from
+`meta.datumapis.com/upstream-cluster-name=cluster-<project>`, the identity
+compute places on mapped namespaces. A missing prefix or empty suffix cannot
+resolve a project. Application bodies cannot set routing attributes. Records
+without project, upstream namespace, or instance identity are discarded.
 
 ## Enable an environment
 
@@ -57,6 +62,8 @@ component against its local fixture and test real collector processing. Set
 `TELEMETRY_BASE_DIR` to an absolute platform base path to test that composition
 instead. The tests cover projects with identical instance names, body spoofing,
 startup/crash output, containers, rotation, restarts, and an export outage.
+They also cover mapped namespace identity, explicit-label precedence, and
+rejection of malformed or incomplete ownership metadata.
 
 Before customer rollout, verify instance logs through the project API and UI,
 including denial of cross-project reads. Measure delay and check collector

@@ -37,6 +37,22 @@ spec:
             - tag_name: datum.project.name
               key: resourcemanager.miloapis.com/project-name
               from: namespace
+            - tag_name: k8s.namespace.upstream_cluster_name
+              key: meta.datumapis.com/upstream-cluster-name
+              from: namespace
+      # Compute's mapped namespaces encode project identity as cluster-<project>.
+      # Prefer an explicit project label; never derive identity from log bodies.
+      transform/kata-project:
+        error_mode: propagate
+        log_statements:
+          - context: resource
+            statements:
+              - >-
+                set(resource.attributes["datum.project.name"],
+                ExtractPatterns(resource.attributes["k8s.namespace.upstream_cluster_name"], "^cluster-(?P<project>.+)$")["project"])
+                where (resource.attributes["datum.project.name"] == nil or resource.attributes["datum.project.name"] == "")
+                and IsString(resource.attributes["k8s.namespace.upstream_cluster_name"])
+                and IsMatch(resource.attributes["k8s.namespace.upstream_cluster_name"], "^cluster-.+$")
       # Never route records with missing ownership to the gateway's internal
       # fallback tenant. Application log bodies remain opaque text.
       filter/kata:
@@ -56,5 +72,5 @@ spec:
       pipelines:
         logs/kata:
           receivers: [filelog/kubernetes]
-          processors: [memory_limiter, k8sattributes/kata, filter/kata, resource/kata]
+          processors: [memory_limiter, k8sattributes/kata, transform/kata-project, filter/kata, resource/kata]
           exporters: [otlp_grpc/project]

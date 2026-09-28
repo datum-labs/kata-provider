@@ -36,8 +36,11 @@ import (
 )
 
 const (
-	fixtureStandalone = "standalone"
-	collectorVersion  = "0.144.0"
+	fixtureStandalone      = "standalone"
+	collectorVersion       = "0.144.0"
+	projectLabel           = "resourcemanager.miloapis.com/project-name"
+	upstreamClusterLabel   = "meta.datumapis.com/upstream-cluster-name"
+	upstreamNamespaceLabel = "meta.datumapis.com/upstream-namespace"
 )
 
 // TestCollector exercises the shipped pipeline with the pinned stock collector,
@@ -53,7 +56,9 @@ func TestCollector(t *testing.T) {
 		t.Fatalf("need collector 0.144.0: %s (%v)", version, err)
 	}
 	dir := t.TempDir()
-	pods := []corev1.Pod{
+	identityCases := projectIdentityCases()
+	pods := make([]corev1.Pod, 0, 7+len(identityCases))
+	pods = append(pods,
 		pod("tenant-a", "11111111-1111-1111-1111-111111111111", true),
 		pod("tenant-b", "22222222-2222-2222-2222-222222222222", true),
 		pod("unmapped", "33333333-3333-3333-3333-333333333333", true),
@@ -61,7 +66,7 @@ func TestCollector(t *testing.T) {
 		pod("tenant-a", "55555555-5555-5555-5555-555555555555", true),
 		pod("tenant-a", "66666666-6666-6666-6666-666666666666", true),
 		pod("tenant-a", "77777777-7777-7777-7777-777777777777", true),
-	}
+	)
 	pods[3].Name = "other-provider"
 	pods[4].Name = fixtureStandalone
 	pods[4].Labels["upstream.instance"] = fixtureStandalone
@@ -76,7 +81,14 @@ func TestCollector(t *testing.T) {
 	pods[1].Status.ContainerStatuses = []corev1.ContainerStatus{{
 		Name: "app", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1}},
 	}}
-	kube := kubernetesAPI(t, pods)
+	for i, tc := range identityCases {
+		p := pod(tc.name, fmt.Sprintf("%08d-8888-8888-8888-888888888888", i), true)
+		if tc.missingInstance {
+			delete(p.Labels, "upstream.instance")
+		}
+		pods = append(pods, p)
+	}
+	kube := kubernetesAPI(t, pods, identityCases)
 	t.Cleanup(kube.Close)
 	write(t, filepath.Join(dir, "kubeconfig"), fmt.Sprintf(`apiVersion: v1
 kind: Config
@@ -118,6 +130,9 @@ users:
 	write(t, logPath(dir, pods[4], "app", "0.log"), cri("stdout", fixtureStandalone))
 	write(t, logPath(dir, pods[5], "app", "0.log"), cri("stdout", "not-enabled"))
 	write(t, logPath(dir, pods[6], "app", "0.log"), cri("stdout", "other-node"))
+	for i, tc := range identityCases {
+		write(t, logPath(dir, pods[7+i], "app", "0.log"), cri("stdout", tc.name))
+	}
 	spoof := `{"message":"spoof","project_name":"project-b","datum.project.name":"project-b"}`
 	appendLog(t, appLog, cri("stdout", spoof))
 	// CRI partial records are joined without losing their source or stream.
@@ -132,6 +147,12 @@ users:
 	sink.assertIdentity(t, "worker-a", "project-a", "worker", "stdout")
 	sink.assertIdentity(t, "startup-crash-b", "project-b", "app", "stderr")
 	sink.assertIdentity(t, spoof, "project-a", "app", "stdout")
+	for _, tc := range identityCases {
+		if tc.project != "" {
+			sink.wait(t, tc.name)
+			sink.assertIdentity(t, tc.name, tc.project, "app", "stdout")
+		}
+	}
 	process.stop(t)
 
 	// Rotate while the collector is stopped: the unread tail in the renamed
@@ -164,6 +185,11 @@ users:
 	for _, body := range []string{"missing-project", "other-provider", "other-node"} {
 		if len(sink.records[body]) != 0 {
 			t.Errorf("exported a record without trusted Kata project identity: %q", body)
+		}
+	}
+	for _, tc := range identityCases {
+		if tc.project == "" && len(sink.records[tc.name]) != 0 {
+			t.Errorf("exported logs without resolved identity: %s", tc.name)
 		}
 	}
 	standalone := sink.records[fixtureStandalone][0].resource
@@ -406,18 +432,82 @@ func attributes(attrs []*common.KeyValue) map[string]string {
 	return result
 }
 
-func kubernetesAPI(t *testing.T, pods []corev1.Pod) *httptest.Server {
+type projectIdentityCase struct {
+	name            string
+	labels          map[string]string
+	project         string
+	missingInstance bool
+}
+
+func projectIdentityCases() []projectIdentityCase {
+	return []projectIdentityCase{
+		{
+			name:    "explicit-only",
+			labels:  map[string]string{projectLabel: "project-explicit", upstreamNamespaceLabel: "default"},
+			project: "project-explicit",
+		},
+		{
+			name: "empty-explicit",
+			labels: map[string]string{
+				projectLabel: "", upstreamClusterLabel: "cluster-project-empty", upstreamNamespaceLabel: "default",
+			},
+			project: "project-empty",
+		},
+		{
+			name: "explicit-precedence",
+			labels: map[string]string{
+				projectLabel: "project-preferred", upstreamClusterLabel: "cluster-project-other",
+				upstreamNamespaceLabel: "default",
+			},
+			project: "project-preferred",
+		},
+		{
+			name: "prefixed-explicit",
+			labels: map[string]string{
+				projectLabel: "cluster-project-literal", upstreamClusterLabel: "cluster-project-literal",
+				upstreamNamespaceLabel: "default",
+			},
+			project: "cluster-project-literal",
+		},
+		{
+			name:   "invalid-cluster",
+			labels: map[string]string{upstreamClusterLabel: "project-invalid", upstreamNamespaceLabel: "default"},
+		},
+		{
+			name:   "empty-cluster",
+			labels: map[string]string{upstreamClusterLabel: "cluster-", upstreamNamespaceLabel: "default"},
+		},
+		{
+			name:   "missing-namespace",
+			labels: map[string]string{upstreamClusterLabel: "cluster-project-nonamespace"},
+		},
+		{
+			name: "missing-instance",
+			labels: map[string]string{
+				upstreamClusterLabel: "cluster-project-noinstance", upstreamNamespaceLabel: "default",
+			},
+			missingInstance: true,
+		},
+	}
+}
+
+func kubernetesAPI(t *testing.T, pods []corev1.Pod, identityCases []projectIdentityCase) *httptest.Server {
 	t.Helper()
 	namespaces := make([]corev1.Namespace, 0, 3)
 	for _, name := range []string{"tenant-a", "tenant-b", "unmapped"} {
 		ns := corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name, ResourceVersion: "1"}}
 		if name != "unmapped" {
 			ns.Labels = map[string]string{
-				"resourcemanager.miloapis.com/project-name": "project-" + strings.TrimPrefix(name, "tenant-"),
-				"meta.datumapis.com/upstream-namespace":     "default",
+				upstreamClusterLabel:   "cluster-project-" + strings.TrimPrefix(name, "tenant-"),
+				upstreamNamespaceLabel: "default",
 			}
 		}
 		namespaces = append(namespaces, ns)
+	}
+	for _, tc := range identityCases {
+		namespaces = append(namespaces, corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: tc.name, ResourceVersion: "1", Labels: tc.labels},
+		})
 	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
