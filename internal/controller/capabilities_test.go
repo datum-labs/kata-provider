@@ -35,6 +35,7 @@ func TestCapabilities(t *testing.T) {
 		{runtimeclass.FeatureEnvFrom, true, "the kubelet resolves them before the container starts"},
 		{runtimeclass.FeatureImagePullSecrets, true, "images are pulled on the host under the named credentials"},
 		{runtimeclass.FeatureContainerCapabilities, true, "a capability acts inside the guest kernel, not on the host"},
+		{runtimeclass.FeatureExec, true, "the kubelet's exec reaches into the guest through the Kata agent"},
 		{runtimeclass.FeatureVirtualMachineRuntime, false, "the guest kernel and image are platform-owned"},
 		{runtimeclass.FeatureDiskVolumes, false, "no cell serving this class runs a storage integration yet"},
 		{runtimeclass.FeatureDeviceVolumeAttachments, false, "a raw device attachment presupposes a disk"},

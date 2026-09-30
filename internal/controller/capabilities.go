@@ -47,6 +47,12 @@ var Capabilities = runtimeclass.Capabilities{
 		// published as spec.defaultSecurityContext on the registered
 		// RuntimeClass; linuxCapabilities below is what may be requested.
 		runtimeclass.FeatureContainerCapabilities,
+
+		// A shell session runs a command in a running container through the
+		// kubelet's exec, which Kata carries into the guest. The instance Pod
+		// shares the cell Instance's namespace and name and is controlled by
+		// it, which is how the cell's shell agent finds it.
+		runtimeclass.FeatureExec,
 	},
 	GrantableCapabilities: linuxCapabilities,
 }
