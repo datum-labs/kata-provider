@@ -4,6 +4,9 @@ package config
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net"
 
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -162,4 +165,44 @@ type DownstreamResourceManagementConfig struct {
 	// +optional
 	// +default=false
 	EnableVPCNetworking bool `json:"enableVPCNetworking,omitempty"`
+
+	// InstanceDNS is the resolver configuration that every instance receives.
+	// The field has the same shape and meaning as a Pod's dnsConfig:
+	// nameservers, search domains, and resolver options. When the field is set,
+	// an instance resolves names through exactly these nameservers, and the
+	// cluster's own resolver and the node's resolv.conf play no part. When the
+	// field is unset, an instance inherits whatever the cluster hands a Pod.
+	//
+	// An instance's guest runs its own network stack, so a cluster-local
+	// resolver is often unreachable from inside it, and a deployment points
+	// instances at public resolvers instead. Nameservers may be IPv4 or IPv6
+	// addresses, and a list of only IPv6 addresses is valid.
+	//
+	// At least one nameserver is required whenever the field is set. A tenant
+	// cannot influence this value. The value comes from provider configuration,
+	// never from the Instance.
+	//
+	// +optional
+	InstanceDNS *core.PodDNSConfig `json:"instanceDNS,omitempty"`
+}
+
+// Validate reports configuration that would make every instance Pod fail
+// admission. Reporting it at startup, rather than on the first instance, keeps
+// a misconfigured deployment from looking healthy until a tenant arrives.
+func (c *DownstreamResourceManagementConfig) Validate() error {
+	if c.InstanceDNS == nil {
+		return nil
+	}
+	// The API server refuses dnsPolicy None without a nameserver, and refuses
+	// a nameserver that is not an IP address. Hostnames cannot be resolved
+	// before a resolver exists.
+	if len(c.InstanceDNS.Nameservers) == 0 {
+		return errors.New("instanceDNS requires at least one nameserver")
+	}
+	for _, nameserver := range c.InstanceDNS.Nameservers {
+		if net.ParseIP(nameserver) == nil {
+			return fmt.Errorf("instanceDNS nameserver %q is not an IP address", nameserver)
+		}
+	}
+	return nil
 }

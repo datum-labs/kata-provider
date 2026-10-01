@@ -24,3 +24,17 @@ downstreamResourceManagement:
   # node it has installed the runtime on, and adds no toleration. Set them in an
   # overlay where the runtime is installed by other means, or where the
   # Kata-capable nodes are tainted.
+  # instanceDNS is left unset: instances then inherit the cluster's resolver
+  # configuration. A guest runs its own network stack, so a cluster-local
+  # resolver is often unreachable from inside it; a cell whose instances must
+  # resolve names points them at public resolvers instead. The shape is a Pod's
+  # dnsConfig, nameservers may be IPv6 only, and at least one is required:
+  #
+  #   instanceDNS:
+  #     nameservers:
+  #       - 2606:4700:4700::1111
+  #       - 2001:4860:4860::8888
+  #     searches: []
+  #     options:
+  #       - name: ndots
+  #         value: "1"

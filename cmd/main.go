@@ -83,6 +83,11 @@ func main() {
 		scheme.Default(&serverConfig)
 	}
 
+	if err := serverConfig.DownstreamResourceManagement.Validate(); err != nil {
+		setupLog.Error(err, "invalid server config")
+		os.Exit(1)
+	}
+
 	setupLog.Info("server config", "config", serverConfig)
 
 	cfg := ctrl.GetConfigOrDie()

@@ -4,7 +4,10 @@ package config
 
 import (
 	"os"
+	"reflect"
 	"testing"
+
+	core "k8s.io/api/core/v1"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -127,5 +130,97 @@ func TestDefaults(t *testing.T) {
 	}
 	if got := config.MetricsServer.BindAddress; got == "" {
 		t.Error("expected a default metrics bind address")
+	}
+}
+
+// TestInstanceDNSDecodesIPv6OnlyNameservers decodes the resolver configuration
+// a production cell sets: public IPv6 resolvers and nothing else. The field
+// mirrors a Pod's dnsConfig, so an IPv6-only list must decode and validate
+// unchanged.
+func TestInstanceDNSDecodesIPv6OnlyNameservers(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add config scheme: %v", err)
+	}
+	if err := RegisterDefaults(scheme); err != nil {
+		t.Fatalf("failed to register defaults: %v", err)
+	}
+	codecs := serializer.NewCodecFactory(scheme, serializer.EnableStrict)
+
+	data := []byte(`apiVersion: apiserver.config.datumapis.com/v1alpha1
+kind: KataProvider
+downstreamResourceManagement:
+  instanceDNS:
+    nameservers:
+      - 2606:4700:4700::1111
+      - 2001:4860:4860::8888
+    searches:
+      - example.internal
+    options:
+      - name: ndots
+        value: "1"
+`)
+
+	var config KataProvider
+	if err := runtime.DecodeInto(codecs.UniversalDecoder(), data, &config); err != nil {
+		t.Fatalf("failed to decode the config: %v", err)
+	}
+	if err := config.DownstreamResourceManagement.Validate(); err != nil {
+		t.Fatalf("expected an IPv6-only nameserver list to validate: %v", err)
+	}
+
+	dns := config.DownstreamResourceManagement.InstanceDNS
+	if dns == nil {
+		t.Fatal("expected instanceDNS to decode")
+	}
+	wantNameservers := []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
+	if got := dns.Nameservers; !reflect.DeepEqual(got, wantNameservers) {
+		t.Errorf("nameservers = %v, want %v", got, wantNameservers)
+	}
+	if got := dns.Searches; !reflect.DeepEqual(got, []string{"example.internal"}) {
+		t.Errorf("searches = %v, want [example.internal]", got)
+	}
+	if len(dns.Options) != 1 || dns.Options[0].Name != "ndots" || dns.Options[0].Value == nil || *dns.Options[0].Value != "1" {
+		t.Errorf("options = %+v, want ndots=1", dns.Options)
+	}
+}
+
+// TestInstanceDNSIsUnsetByDefault checks that a deployment supplying no
+// resolver configuration leaves instances on the cluster default. Defaulting
+// must not invent a resolver.
+func TestInstanceDNSIsUnsetByDefault(t *testing.T) {
+	var config KataProvider
+	SetObjectDefaults_KataProvider(&config)
+
+	if config.DownstreamResourceManagement.InstanceDNS != nil {
+		t.Error("expected instanceDNS to be unset by default")
+	}
+	if err := config.DownstreamResourceManagement.Validate(); err != nil {
+		t.Errorf("expected an unset instanceDNS to validate: %v", err)
+	}
+}
+
+// TestInstanceDNSValidation covers the configurations the API server would
+// refuse on every instance Pod. The provider reports them at startup instead.
+func TestInstanceDNSValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		dns     *core.PodDNSConfig
+		wantErr bool
+	}{
+		{name: "no nameservers", dns: &core.PodDNSConfig{Searches: []string{"example.internal"}}, wantErr: true},
+		{name: "hostname nameserver", dns: &core.PodDNSConfig{Nameservers: []string{"dns.google"}}, wantErr: true},
+		{name: "IPv4 nameserver", dns: &core.PodDNSConfig{Nameservers: []string{"1.1.1.1"}}},
+		{name: "IPv6 nameserver", dns: &core.PodDNSConfig{Nameservers: []string{"2606:4700:4700::1111"}}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			config := DownstreamResourceManagementConfig{InstanceDNS: tc.dns}
+			err := config.Validate()
+			if (err != nil) != tc.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
 	}
 }

@@ -274,6 +274,7 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	desired.Spec.RuntimeClassName = ptr.To(r.runtimeHandler())
 
 	applyPodSecurityContext(&desired.Spec)
+	applyInstanceDNS(&desired.Spec, r.instanceDNS())
 
 	pod := &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -365,6 +366,22 @@ func applyPodSecurityContext(spec *core.PodSpec) {
 	spec.SecurityContext = &core.PodSecurityContext{
 		SeccompProfile: &core.SeccompProfile{Type: core.SeccompProfileTypeRuntimeDefault},
 	}
+}
+
+// applyInstanceDNS points an instance at the resolvers its deployment chose.
+//
+// A guest runs its own network stack, so the cluster resolver a Pod would
+// normally be handed is often unreachable from inside it. Setting dnsPolicy
+// None is what stops the kubelet from merging the cluster's and the node's
+// resolvers back in; the resolv.conf the guest receives then contains exactly
+// what the deployment configured. A nil config leaves the Pod on the cluster
+// default, so a cell that sets nothing behaves as before.
+func applyInstanceDNS(spec *core.PodSpec, dns *core.PodDNSConfig) {
+	if dns == nil {
+		return
+	}
+	spec.DNSPolicy = core.DNSNone
+	spec.DNSConfig = dns.DeepCopy()
 }
 
 // podCreationDeclined reports whether the API server refused a new instance Pod
@@ -587,6 +604,13 @@ func (r *InstanceReconciler) nodeSelector() map[string]string {
 func (r *InstanceReconciler) tolerations() []core.Toleration {
 	if r.Config != nil {
 		return r.Config.DownstreamResourceManagement.Tolerations
+	}
+	return nil
+}
+
+func (r *InstanceReconciler) instanceDNS() *core.PodDNSConfig {
+	if r.Config != nil {
+		return r.Config.DownstreamResourceManagement.InstanceDNS
 	}
 	return nil
 }
