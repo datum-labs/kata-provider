@@ -106,6 +106,29 @@ kubectl create namespace kata-provider-system
 kubectl apply -k config/overlays/cell
 ```
 
+### Instance DNS
+
+By default an instance inherits the resolver configuration the cluster hands a
+Pod. A guest runs its own network stack, so a cluster-local resolver is often
+unreachable from inside it, and a cell whose instances must resolve names
+configures resolvers once, for every instance the provider creates, in the
+provider's config file:
+
+```yaml
+downstreamResourceManagement:
+  instanceDNS:
+    nameservers:
+      - 2606:4700:4700::1111
+      - 2001:4860:4860::8888
+```
+
+The setting has the shape of a Pod's `dnsConfig`: `nameservers`, optional
+`searches`, and optional `options`. When it is set, an instance resolves names
+through exactly those nameservers; the cluster's resolver and the node's
+`resolv.conf` play no part. Nameservers may be IPv4 or IPv6, and an IPv6-only
+list is valid. At least one nameserver is required, and the provider refuses to
+start without one. A tenant cannot change this per instance.
+
 The ClusterRole in `config/components/controller_rbac/role.yaml` is generated
 from the kubebuilder markers in `internal/`. Change the markers and run
 `make manifests`; a hand-edit there disappears on the next regeneration and
