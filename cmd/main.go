@@ -5,7 +5,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
+	"time"
 
 	// Import every Kubernetes client authentication plugin, for example Azure,
 	// GCP, and OIDC, so that exec-entrypoint and run can use them.
@@ -15,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -98,13 +101,15 @@ func main() {
 		// The cache is scoped to the runtime class that this provider serves.
 		// The scope is a correctness and memory-safety requirement, not an
 		// optimization. For the reasoning, see controller.CacheOptions.
-		Cache:                   controller.CacheOptions(),
-		Metrics:                 serverConfig.MetricsServer.Options(ctx, nil),
-		WebhookServer:           webhook.NewServer(serverConfig.WebhookServer.Options(ctx, nil)),
-		HealthProbeBindAddress:  probeAddr,
-		LeaderElection:          enableLeaderElection,
-		LeaderElectionID:        "b9c2e4a7.datumapis.com",
-		LeaderElectionNamespace: leaderElectionNamespace,
+		Cache:                         controller.CacheOptions(),
+		Metrics:                       serverConfig.MetricsServer.Options(ctx, nil),
+		WebhookServer:                 webhook.NewServer(serverConfig.WebhookServer.Options(ctx, nil)),
+		HealthProbeBindAddress:        probeAddr,
+		LeaderElection:                enableLeaderElection,
+		LeaderElectionID:              "b9c2e4a7.datumapis.com",
+		LeaderElectionNamespace:       leaderElectionNamespace,
+		LeaderElectionConfig:          leaderElectionRestConfig(cfg),
+		LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -137,4 +142,21 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+const (
+	leaderElectionQPS   = 5
+	leaderElectionBurst = 10
+)
+
+func leaderElectionRestConfig(base *rest.Config) *rest.Config {
+	cfg := rest.CopyConfig(base)
+	cfg.RateLimiter = nil
+	cfg.QPS = leaderElectionQPS
+	cfg.Burst = leaderElectionBurst
+	cfg.Dial = (&net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext
+	return cfg
 }
