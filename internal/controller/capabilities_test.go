@@ -4,6 +4,7 @@ package controller
 
 import (
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -35,6 +36,7 @@ func TestCapabilities(t *testing.T) {
 		{runtimeclass.FeatureEnvFrom, true, "the kubelet resolves them before the container starts"},
 		{runtimeclass.FeatureImagePullSecrets, true, "images are pulled on the host under the named credentials"},
 		{runtimeclass.FeatureContainerCapabilities, true, "a capability acts inside the guest kernel, not on the host"},
+		{runtimeclass.FeatureSandboxSysctls, true, "the kubelet applies an exact allowlist inside the guest network namespace"},
 		{runtimeclass.FeatureExec, true, "the kubelet's exec reaches into the guest through the Kata agent"},
 		{runtimeclass.FeatureVirtualMachineRuntime, false, "the guest kernel and image are platform-owned"},
 		{runtimeclass.FeatureDiskVolumes, false, "no cell serving this class runs a storage integration yet"},
@@ -121,6 +123,40 @@ func TestCapabilities_MatchRegisteredClass(t *testing.T) {
 	}
 	if got, want := sorted(registered.GrantableCapabilities), sorted(Capabilities.GrantableCapabilities); !slices.Equal(got, want) {
 		t.Errorf("registered grantable capabilities = %v, compiled = %v", got, want)
+	}
+	if compiled, published := normalizedSysctls(Capabilities.SupportedSysctls), normalizedSysctls(registered.SupportedSysctls); !reflect.DeepEqual(compiled, published) {
+		t.Errorf("registered supported sysctls = %#v, compiled = %#v", published, compiled)
+	}
+}
+
+func TestCapabilities_SupportsOnlyForwardingSysctls(t *testing.T) {
+	want := []runtimeclass.Sysctl{
+		{Name: "net.ipv4.ip_forward", AllowedValues: []computev1alpha.SysctlValue{"0", "1"}},
+		{Name: "net.ipv6.conf.all.forwarding", AllowedValues: []computev1alpha.SysctlValue{"0", "1"}},
+		{Name: "net.ipv6.conf.default.forwarding", AllowedValues: []computev1alpha.SysctlValue{"0", "1"}},
+	}
+	if got := normalizedSysctls(Capabilities.SupportedSysctls); !reflect.DeepEqual(got, want) {
+		t.Fatalf("supported sysctls = %#v, want %#v", got, want)
+	}
+	for _, sysctl := range want {
+		for _, value := range sysctl.AllowedValues {
+			if !Capabilities.SupportsSysctl(sysctl.Name, value) {
+				t.Errorf("SupportsSysctl(%q, %q) = false", sysctl.Name, value)
+			}
+		}
+	}
+	for _, unsupported := range []struct {
+		name  string
+		value computev1alpha.SysctlValue
+	}{
+		{name: "net.ipv4.conf.all.forwarding", value: "1"},
+		{name: "net.ipv6.conf.*.forwarding", value: "1"},
+		{name: "net.ipv4.ip_forward", value: "2"},
+		{name: "kernel.hostname", value: "router"},
+	} {
+		if Capabilities.SupportsSysctl(unsupported.name, unsupported.value) {
+			t.Errorf("SupportsSysctl(%q, %q) = true, want false", unsupported.name, unsupported.value)
+		}
 	}
 }
 
@@ -225,5 +261,14 @@ func readRegisteredClass(t *testing.T) *computev1alpha.RuntimeClass {
 func sorted[S ~[]E, E ~string](s S) S {
 	out := slices.Clone(s)
 	slices.Sort(out)
+	return out
+}
+
+func normalizedSysctls(sysctls []runtimeclass.Sysctl) []runtimeclass.Sysctl {
+	out := slices.Clone(sysctls)
+	for i := range out {
+		out[i].AllowedValues = sorted(out[i].AllowedValues)
+	}
+	slices.SortFunc(out, func(a, b runtimeclass.Sysctl) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }

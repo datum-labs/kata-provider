@@ -1238,6 +1238,11 @@ func TestReconcile_SubmittedPodNeverReachesTheHost(t *testing.T) {
 			}},
 		}
 		i.Spec.Runtime.Sandbox.ImagePullSecrets = []computev1alpha.LocalSecretReference{{Name: "registry"}}
+		i.Spec.Runtime.Sandbox.Sysctls = []computev1alpha.SandboxSysctl{
+			{Name: "net.ipv6.conf.default.forwarding", Value: "1"},
+			{Name: "net.ipv4.ip_forward", Value: "1"},
+			{Name: "net.ipv6.conf.all.forwarding", Value: "1"},
+		}
 		i.Spec.Runtime.Sandbox.Containers = []computev1alpha.SandboxContainer{
 			{
 				Name:  testContainerName,
@@ -1289,6 +1294,14 @@ func TestReconcile_SubmittedPodNeverReachesTheHost(t *testing.T) {
 	if spec.HostNetwork || spec.HostPID || spec.HostIPC {
 		t.Errorf("pod shares a host namespace: hostNetwork=%v hostPID=%v hostIPC=%v",
 			spec.HostNetwork, spec.HostPID, spec.HostIPC)
+	}
+	wantSysctls := []core.Sysctl{
+		{Name: "net.ipv4.ip_forward", Value: "1"},
+		{Name: "net.ipv6.conf.all.forwarding", Value: "1"},
+		{Name: "net.ipv6.conf.default.forwarding", Value: "1"},
+	}
+	if spec.SecurityContext == nil || !slices.Equal(spec.SecurityContext.Sysctls, wantSysctls) {
+		t.Errorf("pod sysctls = %#v, want exact guest forwarding set %#v", spec.SecurityContext, wantSysctls)
 	}
 	if spec.HostUsers != nil && *spec.HostUsers {
 		t.Error("pod explicitly runs in the host user namespace")

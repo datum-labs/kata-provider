@@ -357,15 +357,20 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 // reads the field on the Pod, and so does an operator auditing what the
 // provider submits.
 //
+// The shared Pod builder may already have placed validated sandbox sysctls on
+// this same context. Preserve them: replacing the object here would silently
+// drop a request the runtime class admitted.
+//
 // runAsNonRoot is deliberately absent. The general-purpose class exists to run
 // stock container images, and many of them start as root. Setting the field
 // would fail exactly the images the class promises to run, so a cell hosting
 // these instances enforces the PodSecurity baseline profile rather than
 // restricted.
 func applyPodSecurityContext(spec *core.PodSpec) {
-	spec.SecurityContext = &core.PodSecurityContext{
-		SeccompProfile: &core.SeccompProfile{Type: core.SeccompProfileTypeRuntimeDefault},
+	if spec.SecurityContext == nil {
+		spec.SecurityContext = &core.PodSecurityContext{}
 	}
+	spec.SecurityContext.SeccompProfile = &core.SeccompProfile{Type: core.SeccompProfileTypeRuntimeDefault}
 }
 
 // applyInstanceDNS points an instance at the resolvers its deployment chose.

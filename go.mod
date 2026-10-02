@@ -3,7 +3,7 @@ module go.datum.net/kata-provider
 go 1.26.4
 
 require (
-	go.datum.net/compute v0.10.12-0.20260930145836-4d15a9b358cc
+	go.datum.net/compute v0.12.1-0.20261002174459-3564050fda60
 	go.datum.net/network-services-operator v0.27.0
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
@@ -77,7 +77,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260603202125-055de637280b // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
