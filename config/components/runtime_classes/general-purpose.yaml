@@ -31,6 +31,7 @@ spec:
       - envFrom
       - imagePullSecrets
       - containerCapabilities
+      - sandboxSysctls
       - exec
     # Every Linux capability. A capability acts inside the instance's own
     # virtual machine, whose kernel confines it, so granting one gives no access
@@ -77,6 +78,16 @@ spec:
       - SYS_TIME
       - SYS_TTY_CONFIG
       - WAKE_ALARM
+    # Exact guest-network namespace settings this class can apply. Keep this
+    # list literal: prefixes and wildcards could unexpectedly expose a newly
+    # namespaced kernel parameter after a node upgrade.
+    supportedSysctls:
+      - name: net.ipv4.ip_forward
+        allowedValues: ["0", "1"]
+      - name: net.ipv6.conf.all.forwarding
+        allowedValues: ["0", "1"]
+      - name: net.ipv6.conf.default.forwarding
+        allowedValues: ["0", "1"]
     compatibility: >-
       Runs standard Linux container images without modification, including
       images that need a full filesystem, dynamic linking, or credentials to

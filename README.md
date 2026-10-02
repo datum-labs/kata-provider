@@ -82,7 +82,31 @@ cluster it runs in must already provide:
    starting. A request the class itself refuses, such as adding `ALL` or a
    `CAP_`-prefixed name, also reports a configuration error that says how to fix
    it; the provider then waits for the instance to change instead of retrying.
-5. **The compute CRDs**, which are owned and published by the compute control
+5. **Kubelets that admit the class's three namespaced forwarding sysctls.** Add
+   these exact names to `allowedUnsafeSysctls` on every node selected by this
+   provider:
+
+   - `net.ipv4.ip_forward`
+   - `net.ipv6.conf.all.forwarding`
+   - `net.ipv6.conf.default.forwarding`
+
+   Do not use a wildcard. Kubernetes classifies these as unsafe even though
+   they are network-namespace scoped, so publishing them in the Datum runtime
+   class is necessary for Compute admission but does not replace kubelet
+   admission. Kata's [sysctl guide][kata-sysctls] confirms that namespaced Pod
+   sysctls are applied inside the guest and documents the same kubelet
+   prerequisite. The cell's PodSecurity configuration must also admit them for
+   the Kata runtime class. The provider changes neither node sysctls nor the
+   host network namespace.
+
+   A router normally requests value `"1"` for all three. The IPv6 `all` value
+   covers interfaces present at sandbox startup and `default` makes later
+   interfaces, including TUN devices, inherit forwarding. Enabling IPv6
+   forwarding also changes Linux Router Advertisement acceptance; the workload
+   must preserve its uplink route explicitly if that route came from RA. This
+   class does not expose `accept_ra`, and sysctl support alone does not promise
+   broader VPC routing.
+6. **The compute CRDs**, which are owned and published by the compute control
    plane, not by this repository.
 
 ## Deploying
@@ -180,6 +204,13 @@ kubectl apply -f config/samples/instance.yaml
 kubectl get instances.compute.datumapis.com
 ```
 
+The sample shows the three sandbox-level settings for an instance acting as a
+dual-stack router. Compute rejects every other name and every value other than
+`"0"` or `"1"` against the class's published exact allowlist before the
+provider creates a Pod.
+
+[kata-sysctls]: https://github.com/kata-containers/kata-containers/blob/main/docs/how-to/how-to-use-sysctls-with-kata.md
+
 Without Kata on the node the Pod will not be admitted, which is the correct
 outcome: this provider will not fall back to a shared kernel.
 
@@ -189,6 +220,24 @@ outcome: this provider will not fall back to a shared kernel.
 make test    # unit tests
 make lint
 ```
+
+When developing against an unreleased Compute API change, verify both modules
+through a temporary Go workspace instead of adding a local `replace` or a
+fabricated Compute version to this repository:
+
+```bash
+compute_checkout=/absolute/path/to/compute
+provider_checkout=$(pwd)
+verification_workspace=$(mktemp -d)
+(cd "$verification_workspace" && go work init "$compute_checkout" "$provider_checkout")
+GOWORK="$verification_workspace/go.work" go test ./...
+```
+
+Release ordering matters: publish the Compute API first, then update this
+provider's `go.datum.net/compute` requirement to that real released version and
+run the tests without the temporary workspace. Provider code using an
+unreleased API is not independently buildable from its pinned dependency, and
+the pin must not claim a version that does not exist.
 
 ### End-to-end
 
