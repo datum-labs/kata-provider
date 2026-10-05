@@ -172,9 +172,11 @@ func registeredDefaultSecurityContext(t *testing.T) *computev1alpha.RuntimeClass
 	defaults := readRegisteredClass(t).Spec.DefaultSecurityContext
 	if defaults == nil {
 		t.Fatal("the registered class publishes no default security context")
+		return nil
 	}
 	if defaults.Capabilities == nil {
 		t.Fatal("the registered default security context grants no capabilities")
+		return nil
 	}
 	return defaults
 }

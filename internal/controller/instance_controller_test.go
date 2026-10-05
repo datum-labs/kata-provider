@@ -342,9 +342,9 @@ func TestReconcile_SizingComesFromTheCatalog(t *testing.T) {
 // publishedInstanceType builds an InstanceType object the fake client serves,
 // at a size distinct from the hardcoded catalog (1 vCPU / 2 GiB) so a test can
 // tell which catalog the resulting Pod was sized from.
-func publishedInstanceType(name string) *computev1alpha.InstanceType {
+func publishedInstanceType() *computev1alpha.InstanceType {
 	return &computev1alpha.InstanceType{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		ObjectMeta: metav1.ObjectMeta{Name: instancetype.D1Standard2},
 		Spec: computev1alpha.InstanceTypeSpec{
 			Resources: computev1alpha.InstanceTypeResources{
 				CPU:    resource.MustParse("2"),
@@ -381,7 +381,7 @@ func assertLimitEqual(t *testing.T, limits core.ResourceList, name core.Resource
 func TestReconcile_SizingComesFromAPublishedInstanceType(t *testing.T) {
 	reconciler, fakeClient := newReconciler(t, nil,
 		newTestInstance(),
-		publishedInstanceType(instancetype.D1Standard2),
+		publishedInstanceType(),
 	)
 
 	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
@@ -412,7 +412,7 @@ func TestReconcile_LegacyInstanceTypeNameResolves(t *testing.T) {
 	})
 	reconciler, fakeClient := newReconciler(t, nil,
 		instance,
-		publishedInstanceType(instancetype.D1Standard2),
+		publishedInstanceType(),
 	)
 
 	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
@@ -445,7 +445,7 @@ func TestReconcile_ExplicitCustomerLimitsWinOverPublishedType(t *testing.T) {
 	})
 	reconciler, fakeClient := newReconciler(t, nil,
 		instance,
-		publishedInstanceType(instancetype.D1Standard2),
+		publishedInstanceType(),
 	)
 
 	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
@@ -497,7 +497,7 @@ func TestReconcile_InstanceWithoutSandboxDoesNotPanic(t *testing.T) {
 	})
 	reconciler, _ := newReconciler(t, nil,
 		instance,
-		publishedInstanceType(instancetype.D1Standard2),
+		publishedInstanceType(),
 	)
 
 	// Reconcile must not panic on nil Sandbox
@@ -828,6 +828,7 @@ func TestSyncInstanceStatus(t *testing.T) {
 			programmed := apimeta.FindStatusCondition(updated.Status.Conditions, computev1alpha.InstanceProgrammed)
 			if programmed == nil {
 				t.Fatal("expected a Programmed condition")
+				return
 			}
 			if programmed.Status != tc.wantProgrammed || programmed.Reason != tc.wantProgrammedReason {
 				t.Errorf("Programmed = %s/%s, want %s/%s",
@@ -837,6 +838,7 @@ func TestSyncInstanceStatus(t *testing.T) {
 			available := apimeta.FindStatusCondition(updated.Status.Conditions, computev1alpha.InstanceAvailable)
 			if available == nil {
 				t.Fatal("expected an Available condition")
+				return
 			}
 			if available.Status != tc.wantAvailable || available.Reason != tc.wantAvailableReason {
 				t.Errorf("Available = %s/%s, want %s/%s",
@@ -987,6 +989,7 @@ func TestReconcile_PodSecurityContext(t *testing.T) {
 	security := pod.Spec.Containers[0].SecurityContext
 	if security == nil {
 		t.Fatal("expected the instance container to carry a security context")
+		return
 	}
 	if security.RunAsNonRoot != nil {
 		t.Error("expected the provider to leave the user of a stock image alone")
@@ -1246,6 +1249,7 @@ func TestReconcile_DeclinedPodIsReportedOnTheInstance(t *testing.T) {
 		condition := apimeta.FindStatusCondition(updated.Status.Conditions, conditionType)
 		if condition == nil {
 			t.Fatalf("expected a %s condition", conditionType)
+			continue
 		}
 		if condition.Status != metav1.ConditionFalse {
 			t.Errorf("%s status = %s, want False", conditionType, condition.Status)
@@ -1303,6 +1307,7 @@ func TestReconcile_RefusedConfigurationIsReportedOnTheInstance(t *testing.T) {
 		condition := apimeta.FindStatusCondition(updated.Status.Conditions, conditionType)
 		if condition == nil {
 			t.Fatalf("expected a %s condition", conditionType)
+			continue
 		}
 		if condition.Status != metav1.ConditionFalse {
 			t.Errorf("%s status = %s, want False", conditionType, condition.Status)
