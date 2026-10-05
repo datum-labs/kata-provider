@@ -17,6 +17,16 @@ spec:
     resources:
       instanceType: datumcloud/d1-standard-2
     sandbox:
+      # A router can enable forwarding before its containers start. Uncomment
+      # the block below only after every selected kubelet admits these exact
+      # unsafe sysctl names. The IPv6 default applies to later TUN interfaces.
+      # sysctls:
+      #   - name: net.ipv4.ip_forward
+      #     value: "1"
+      #   - name: net.ipv6.conf.all.forwarding
+      #     value: "1"
+      #   - name: net.ipv6.conf.default.forwarding
+      #     value: "1"
       containers:
         - name: app
           image: docker.io/library/nginx:latest

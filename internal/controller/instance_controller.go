@@ -72,6 +72,11 @@ const (
 	instanceLabel  = "upstream.instance"
 
 	managedByValue = "kata-provider"
+
+	// nativeLogsLabel transfers instance Pods from the generic platform log
+	// pipeline to the Kata pipeline in the shared compute node collector.
+	nativeLogsLabel      = "telemetry.miloapis.com/otlp-native-logs"
+	nativeLogsLabelValue = "true"
 )
 
 // DefaultNodeSelector places instance Pods on nodes where the Kata runtime is
@@ -397,6 +402,7 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	desired.Spec.RuntimeClassName = ptr.To(r.runtimeHandler())
 
 	applyPodSecurityContext(&desired.Spec)
+	applyInstanceDNS(&desired.Spec, r.instanceDNS())
 
 	pod := &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -412,6 +418,10 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 		for key, value := range desired.Labels {
 			pod.Labels[key] = value
 		}
+
+		// Instance logs always belong to the project-aware Kata pipeline.
+		// Stamp this after tenant labels, including when updating existing Pods.
+		pod.Labels[nativeLogsLabel] = nativeLogsLabelValue
 
 		// Ask for the instance's interfaces to be wired up. Clearing the label
 		// explicitly takes the opt-in back off Pods that already carry it when
@@ -475,15 +485,36 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 // reads the field on the Pod, and so does an operator auditing what the
 // provider submits.
 //
+// The shared Pod builder may already have placed validated sandbox sysctls on
+// this same context. Preserve them: replacing the object here would silently
+// drop a request the runtime class admitted.
+//
 // runAsNonRoot is deliberately absent. The general-purpose class exists to run
 // stock container images, and many of them start as root. Setting the field
 // would fail exactly the images the class promises to run, so a cell hosting
 // these instances enforces the PodSecurity baseline profile rather than
 // restricted.
 func applyPodSecurityContext(spec *core.PodSpec) {
-	spec.SecurityContext = &core.PodSecurityContext{
-		SeccompProfile: &core.SeccompProfile{Type: core.SeccompProfileTypeRuntimeDefault},
+	if spec.SecurityContext == nil {
+		spec.SecurityContext = &core.PodSecurityContext{}
 	}
+	spec.SecurityContext.SeccompProfile = &core.SeccompProfile{Type: core.SeccompProfileTypeRuntimeDefault}
+}
+
+// applyInstanceDNS points an instance at the resolvers its deployment chose.
+//
+// A guest runs its own network stack, so the cluster resolver a Pod would
+// normally be handed is often unreachable from inside it. Setting dnsPolicy
+// None is what stops the kubelet from merging the cluster's and the node's
+// resolvers back in; the resolv.conf the guest receives then contains exactly
+// what the deployment configured. A nil config leaves the Pod on the cluster
+// default, so a cell that sets nothing behaves as before.
+func applyInstanceDNS(spec *core.PodSpec, dns *core.PodDNSConfig) {
+	if dns == nil {
+		return
+	}
+	spec.DNSPolicy = core.DNSNone
+	spec.DNSConfig = dns.DeepCopy()
 }
 
 // podCreationDeclined reports whether the API server refused a new instance Pod
@@ -706,6 +737,13 @@ func (r *InstanceReconciler) nodeSelector() map[string]string {
 func (r *InstanceReconciler) tolerations() []core.Toleration {
 	if r.Config != nil {
 		return r.Config.DownstreamResourceManagement.Tolerations
+	}
+	return nil
+}
+
+func (r *InstanceReconciler) instanceDNS() *core.PodDNSConfig {
+	if r.Config != nil {
+		return r.Config.DownstreamResourceManagement.InstanceDNS
 	}
 	return nil
 }

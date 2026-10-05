@@ -2,7 +2,10 @@
 
 package controller
 
-import "go.datum.net/compute/pkg/runtimeclass"
+import (
+	computev1alpha "go.datum.net/compute/api/v1alpha"
+	"go.datum.net/compute/pkg/runtimeclass"
+)
 
 // RuntimeClassName is the class this provider serves. A provider names its own
 // class, because a class name compiled into the platform would be a tier the
@@ -47,8 +50,31 @@ var Capabilities = runtimeclass.Capabilities{
 		// published as spec.defaultSecurityContext on the registered
 		// RuntimeClass; linuxCapabilities below is what may be requested.
 		runtimeclass.FeatureContainerCapabilities,
+
+		// Sysctls are applied by the kubelet inside the Pod's network
+		// namespace before the guest workload starts. The exact allowlist below
+		// is limited to forwarding knobs needed by an instance acting as a
+		// router; no wildcard or host-level kernel parameter is accepted.
+		runtimeclass.FeatureSandboxSysctls,
+
+		// A shell session runs a command in a running container through the
+		// kubelet's exec, which Kata carries into the guest. The instance Pod
+		// shares the cell Instance's namespace and name and is controlled by
+		// it, which is how the cell's shell agent finds it.
+		runtimeclass.FeatureExec,
 	},
 	GrantableCapabilities: linuxCapabilities,
+	SupportedSysctls:      supportedSysctls,
+}
+
+// supportedSysctls is intentionally an exact, short list. The IPv6 default
+// knob makes interfaces created after sandbox startup (including TUN devices)
+// inherit forwarding, while the all knob enables it on interfaces already
+// present. IPv4 uses its namespace-wide forwarding knob.
+var supportedSysctls = []runtimeclass.Sysctl{
+	{Name: "net.ipv4.ip_forward", AllowedValues: []computev1alpha.SysctlValue{"0", "1"}},
+	{Name: "net.ipv6.conf.all.forwarding", AllowedValues: []computev1alpha.SysctlValue{"0", "1"}},
+	{Name: "net.ipv6.conf.default.forwarding", AllowedValues: []computev1alpha.SysctlValue{"0", "1"}},
 }
 
 // linuxCapabilities is every Linux capability, which is what the class grants.

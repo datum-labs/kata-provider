@@ -82,7 +82,31 @@ cluster it runs in must already provide:
    starting. A request the class itself refuses, such as adding `ALL` or a
    `CAP_`-prefixed name, also reports a configuration error that says how to fix
    it; the provider then waits for the instance to change instead of retrying.
-5. **The compute CRDs**, which are owned and published by the compute control
+5. **Kubelets that admit the class's three namespaced forwarding sysctls.** Add
+   these exact names to `allowedUnsafeSysctls` on every node selected by this
+   provider:
+
+   - `net.ipv4.ip_forward`
+   - `net.ipv6.conf.all.forwarding`
+   - `net.ipv6.conf.default.forwarding`
+
+   Do not use a wildcard. Kubernetes classifies these as unsafe even though
+   they are network-namespace scoped, so publishing them in the Datum runtime
+   class is necessary for Compute admission but does not replace kubelet
+   admission. Kata's [sysctl guide][kata-sysctls] confirms that namespaced Pod
+   sysctls are applied inside the guest and documents the same kubelet
+   prerequisite. The cell's PodSecurity configuration must also admit them for
+   the Kata runtime class. The provider changes neither node sysctls nor the
+   host network namespace.
+
+   A router normally requests value `"1"` for all three. The IPv6 `all` value
+   covers interfaces present at sandbox startup and `default` makes later
+   interfaces, including TUN devices, inherit forwarding. Enabling IPv6
+   forwarding also changes Linux Router Advertisement acceptance; the workload
+   must preserve its uplink route explicitly if that route came from RA. This
+   class does not expose `accept_ra`, and sysctl support alone does not promise
+   broader VPC routing.
+6. **The compute CRDs**, which are owned and published by the compute control
    plane, not by this repository.
 
 ## Deploying
@@ -95,6 +119,7 @@ config/components/       opt-in pieces: controller_rbac, leader_election, kata_r
 config/overlays/cell     what a cell runs: leader election, RBAC, control-plane scheduling
 config/overlays/dev      a single dev cluster: RBAC and a locally declared RuntimeClass
 config/overlays/runtime-rs-installer   places the Kata runtime-rs shim on Talos nodes
+config/components/node-telemetry     Kata pipeline for the shared compute collector
 ```
 
 Create the provider namespace before applying the cell or dev overlay; neither
@@ -105,10 +130,43 @@ kubectl create namespace kata-provider-system
 kubectl apply -k config/overlays/cell
 ```
 
+### Instance DNS
+
+By default an instance inherits the resolver configuration the cluster hands a
+Pod. A guest runs its own network stack, so a cluster-local resolver is often
+unreachable from inside it, and a cell whose instances must resolve names
+configures resolvers once, for every instance the provider creates, in the
+provider's config file:
+
+```yaml
+downstreamResourceManagement:
+  instanceDNS:
+    nameservers:
+      - 2606:4700:4700::1111
+      - 2001:4860:4860::8888
+```
+
+The setting has the shape of a Pod's `dnsConfig`: `nameservers`, optional
+`searches`, and optional `options`. When it is set, an instance resolves names
+through exactly those nameservers; the cluster's resolver and the node's
+`resolv.conf` play no part. Nameservers may be IPv4 or IPv6, and an IPv6-only
+list is valid. At least one nameserver is required, and the provider refuses to
+start without one. A tenant cannot change this per instance.
+
 The ClusterRole in `config/components/controller_rbac/role.yaml` is generated
 from the kubebuilder markers in `internal/`. Change the markers and run
 `make manifests`; a hand-edit there disappears on the next regeneration and
 leaves the controller wedged on a denied informer.
+
+## Instance logs
+
+The [node telemetry component](config/components/node-telemetry/README.md)
+adds a Kata pipeline to the shared compute collector. It sends application
+output to Datum's project log service with instance, container, and project
+identity. Infra composes this component with the platform collector base and
+other runtime components. The provider always marks instance Pods for the Kata
+pipeline. Deploy that collector on every Kata node before rolling out the
+provider. The component does not deploy another collector.
 
 ## Installing the runtime-rs shim on Talos
 
@@ -146,6 +204,13 @@ kubectl apply -f config/samples/instance.yaml
 kubectl get instances.compute.datumapis.com
 ```
 
+The sample shows the three sandbox-level settings for an instance acting as a
+dual-stack router. Compute rejects every other name and every value other than
+`"0"` or `"1"` against the class's published exact allowlist before the
+provider creates a Pod.
+
+[kata-sysctls]: https://github.com/kata-containers/kata-containers/blob/main/docs/how-to/how-to-use-sysctls-with-kata.md
+
 Without Kata on the node the Pod will not be admitted, which is the correct
 outcome: this provider will not fall back to a shared kernel.
 
@@ -155,6 +220,24 @@ outcome: this provider will not fall back to a shared kernel.
 make test    # unit tests
 make lint
 ```
+
+When developing against an unreleased Compute API change, verify both modules
+through a temporary Go workspace instead of adding a local `replace` or a
+fabricated Compute version to this repository:
+
+```bash
+compute_checkout=/absolute/path/to/compute
+provider_checkout=$(pwd)
+verification_workspace=$(mktemp -d)
+(cd "$verification_workspace" && go work init "$compute_checkout" "$provider_checkout")
+GOWORK="$verification_workspace/go.work" go test ./...
+```
+
+Release ordering matters: publish the Compute API first, then update this
+provider's `go.datum.net/compute` requirement to that real released version and
+run the tests without the temporary workspace. Provider code using an
+unreleased API is not independently buildable from its pinned dependency, and
+the pin must not claim a version that does not exist.
 
 ### End-to-end
 

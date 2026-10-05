@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -237,6 +238,71 @@ func TestReconcile_KataPodPolicy(t *testing.T) {
 			}
 			if got := pod.Labels[instanceLabel]; got != testInstanceName {
 				t.Errorf("label %q = %q, want %q", instanceLabel, got, testInstanceName)
+			}
+		})
+	}
+}
+
+// TestReconcile_InstanceDNS covers the resolver configuration a deployment
+// chooses for every instance. When it is set, the Pod must name exactly those
+// resolvers and opt out of the cluster's, which is what dnsPolicy None does.
+// When it is unset, the Pod must be left on the cluster default, so a cell
+// that configures nothing behaves as before.
+func TestReconcile_InstanceDNS(t *testing.T) {
+	ipv6Resolvers := []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
+
+	tests := []struct {
+		name          string
+		config        *config.KataProvider
+		wantPolicy    core.DNSPolicy
+		wantDNSConfig *core.PodDNSConfig
+	}{
+		{
+			name:   "unconfigured provider leaves the cluster's resolver in place",
+			config: nil,
+		},
+		{
+			name:   "configured provider with no instanceDNS leaves the cluster's resolver in place",
+			config: &config.KataProvider{},
+		},
+		{
+			name: "IPv6-only public resolvers replace the cluster's resolver on every instance",
+			config: &config.KataProvider{
+				DownstreamResourceManagement: config.DownstreamResourceManagementConfig{
+					InstanceDNS: &core.PodDNSConfig{
+						Nameservers: ipv6Resolvers,
+						Searches:    []string{"example.internal"},
+						Options:     []core.PodDNSConfigOption{{Name: "ndots", Value: ptr.To("1")}},
+					},
+				},
+			},
+			wantPolicy: core.DNSNone,
+			wantDNSConfig: &core.PodDNSConfig{
+				Nameservers: ipv6Resolvers,
+				Searches:    []string{"example.internal"},
+				Options:     []core.PodDNSConfigOption{{Name: "ndots", Value: ptr.To("1")}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reconciler, fakeClient := newReconciler(t, tc.config, newTestInstance())
+
+			if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
+				t.Fatalf("reconcile failed: %v", err)
+			}
+
+			pod, found := getPod(t, fakeClient)
+			if !found {
+				t.Fatal("expected the instance to be backed by a pod")
+			}
+
+			if got := pod.Spec.DNSPolicy; got != tc.wantPolicy {
+				t.Errorf("dnsPolicy = %q, want %q", got, tc.wantPolicy)
+			}
+			if !reflect.DeepEqual(pod.Spec.DNSConfig, tc.wantDNSConfig) {
+				t.Errorf("dnsConfig = %+v, want %+v", pod.Spec.DNSConfig, tc.wantDNSConfig)
 			}
 		})
 	}
@@ -1336,6 +1402,11 @@ func TestReconcile_SubmittedPodNeverReachesTheHost(t *testing.T) {
 			}},
 		}
 		i.Spec.Runtime.Sandbox.ImagePullSecrets = []computev1alpha.LocalSecretReference{{Name: "registry"}}
+		i.Spec.Runtime.Sandbox.Sysctls = []computev1alpha.SandboxSysctl{
+			{Name: "net.ipv6.conf.default.forwarding", Value: "1"},
+			{Name: "net.ipv4.ip_forward", Value: "1"},
+			{Name: "net.ipv6.conf.all.forwarding", Value: "1"},
+		}
 		i.Spec.Runtime.Sandbox.Containers = []computev1alpha.SandboxContainer{
 			{
 				Name:  testContainerName,
@@ -1387,6 +1458,14 @@ func TestReconcile_SubmittedPodNeverReachesTheHost(t *testing.T) {
 	if spec.HostNetwork || spec.HostPID || spec.HostIPC {
 		t.Errorf("pod shares a host namespace: hostNetwork=%v hostPID=%v hostIPC=%v",
 			spec.HostNetwork, spec.HostPID, spec.HostIPC)
+	}
+	wantSysctls := []core.Sysctl{
+		{Name: "net.ipv4.ip_forward", Value: "1"},
+		{Name: "net.ipv6.conf.all.forwarding", Value: "1"},
+		{Name: "net.ipv6.conf.default.forwarding", Value: "1"},
+	}
+	if spec.SecurityContext == nil || !slices.Equal(spec.SecurityContext.Sysctls, wantSysctls) {
+		t.Errorf("pod sysctls = %#v, want exact guest forwarding set %#v", spec.SecurityContext, wantSysctls)
 	}
 	if spec.HostUsers != nil && *spec.HostUsers {
 		t.Error("pod explicitly runs in the host user namespace")
