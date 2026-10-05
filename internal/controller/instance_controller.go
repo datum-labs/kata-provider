@@ -345,6 +345,10 @@ func (r *InstanceReconciler) resolveInstanceTypeSizing(ctx context.Context, inst
 		return instance, nil
 	}
 
+	if instance.Spec.Runtime.Sandbox == nil {
+		return instance, nil
+	}
+
 	sized := instance.DeepCopy()
 	for i := range sized.Spec.Runtime.Sandbox.Containers {
 		container := &sized.Spec.Runtime.Sandbox.Containers[i]

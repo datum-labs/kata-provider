@@ -422,6 +422,22 @@ func TestReconcile_InstanceTypeReadFailureFailsTheReconcile(t *testing.T) {
 	}
 }
 
+// TestReconcile_InstanceWithoutSandboxDoesNotPanic checks that an Instance with
+// no Sandbox runtime does not cause resolveInstanceTypeSizing to panic when
+// dereferencing Containers. BuildPod handles the missing Sandbox as a configuration error.
+func TestReconcile_InstanceWithoutSandboxDoesNotPanic(t *testing.T) {
+	instance := newTestInstance(func(i *computev1alpha.Instance) {
+		i.Spec.Runtime.Sandbox = nil
+	})
+	reconciler, _ := newReconciler(t, nil,
+		instance,
+		publishedInstanceType(instancetype.D1Standard2),
+	)
+
+	// Reconcile must not panic on nil Sandbox
+	_, _ = reconciler.Reconcile(context.Background(), instanceRequest())
+}
+
 // out of runtime configuration.
 //
 // Kata reads io.katacontainers.* Pod annotations as host-root configuration.
