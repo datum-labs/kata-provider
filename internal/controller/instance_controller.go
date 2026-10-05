@@ -15,8 +15,10 @@ import (
 	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
@@ -28,6 +30,7 @@ import (
 
 	computev1alpha "go.datum.net/compute/api/v1alpha"
 	"go.datum.net/compute/pkg/instancepod"
+	"go.datum.net/compute/pkg/instancetype"
 	"go.datum.net/compute/pkg/runtimeclass"
 	networkingv1alpha "go.datum.net/network-services-operator/api/v1alpha"
 
@@ -101,6 +104,7 @@ var providerRuntimeAnnotations = map[string]string{}
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=instances,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=instances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=instances/finalizers,verbs=update
+// +kubebuilder:rbac:groups=compute.datumapis.com,resources=instancetypes,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=node.k8s.io,resources=runtimeclasses,verbs=get;list;watch
 
@@ -249,10 +253,130 @@ func (r *InstanceReconciler) reconcileSuspended(ctx context.Context, instance *c
 	return ctrl.Result{}, nil
 }
 
+// instanceTypeReader fetches the InstanceType object the instance selects from
+// the cluster the provider runs in. It returns (nil, nil) when the type is not
+// found there, so sizing falls back to the hardcoded catalog. A non-nil error
+// is transient and fails the Pod build rather than silently sizing the Pod
+// below the footprint the compute controller claimed against.
+type instanceTypeReader func(ctx context.Context, name string) (*computev1alpha.InstanceType, error)
+
+// instanceTypeReaderFromClient returns an instanceTypeReader backed by a live
+// client Get, the way the provider reads the InstanceType objects the compute
+// control plane projects into the cell that hosts the instance being sized.
+// A NotFound is reported as (nil, nil) so sizing falls through to the
+// hardcoded catalog, and so is a cluster that does not serve the InstanceType
+// kind at all (its CRD not installed yet): refusing there would fail every
+// Pod build rather than size it from the catalog. Any other error propagates
+// so the reconcile retries.
+func instanceTypeReaderFromClient(c client.Client) instanceTypeReader {
+	return func(ctx context.Context, name string) (*computev1alpha.InstanceType, error) {
+		var t computev1alpha.InstanceType
+		err := c.Get(ctx, types.NamespacedName{Name: name}, &t)
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return &t, nil
+	}
+}
+
+// resolveInstanceTypeSizing returns the instance to build the Pod from, with
+// sizing taken from the published InstanceType catalog rather than only from
+// the catalog compute's shared translation embeds. The shared translation
+// (instancepod.ContainerResources) treats a container limit as explicit and
+// lets it win over its hardcoded catalog, so injecting the resolved sizing as
+// limits makes the Pod run at the footprint the compute controller claimed
+// against, on whichever InstanceType path resolved it.
+//
+// Each dimension resolves independently and takes the first of:
+//  1. An explicit container limit — always wins and is never overwritten.
+//  2. The published InstanceType object the instance selects, read live via
+//     instanceTypeReaderFromClient, name canonicalized first. This is the same
+//     catalog the compute controller sizes quota claims from.
+//  3. The hardcoded catalog (instancetype.Lookup), which covers a type not yet
+//     published in this cell. Its Lookup canonicalizes a retired name, so an
+//     instance stored under the legacy slash name still resolves.
+//  4. Nothing: an unresolved instance is returned unchanged, and the shared
+//     translation's own fallback memory default applies, preserving prior
+//     behavior for unknown or empty instanceType.
+//
+// A transient read failure returns an error so the reconcile retries rather
+// than program the instance at a smaller size than its tier sells. A type
+// missing from the cluster (or the kind not served) falls through to the
+// hardcoded catalog.
+func (r *InstanceReconciler) resolveInstanceTypeSizing(ctx context.Context, instance *computev1alpha.Instance) (*computev1alpha.Instance, error) {
+	itName := instance.Spec.Runtime.Resources.InstanceType
+	if itName == "" {
+		return instance, nil
+	}
+
+	var cpu resource.Quantity
+	var memory resource.Quantity
+	resolved := false
+
+	// The published InstanceType object, when the type is selected and the kind
+	// is served. Transient read failures propagate; a missing type falls through
+	// to the hardcoded catalog below.
+	typ, err := instanceTypeReaderFromClient(r.Client)(ctx, instancetype.Canonical(itName))
+	if err != nil {
+		return nil, fmt.Errorf("reading InstanceType %q: %w", itName, err)
+	}
+	if typ != nil {
+		// A type published with a zero dimension is invalid; fall through to the
+		// hardcoded catalog rather than size partially from it.
+		if !typ.Spec.Resources.CPU.IsZero() && !typ.Spec.Resources.Memory.IsZero() {
+			cpu = typ.Spec.Resources.CPU
+			memory = typ.Spec.Resources.Memory
+			resolved = true
+		}
+	}
+
+	if !resolved {
+		if sizing, ok := instancetype.Lookup(itName); ok {
+			cpu = *resource.NewMilliQuantity(sizing.CPUMillicores, resource.DecimalSI)
+			memory = *resource.NewQuantity(sizing.MemoryMiB*1024*1024, resource.BinarySI)
+			resolved = true
+		}
+	}
+
+	if !resolved {
+		return instance, nil
+	}
+
+	sized := instance.DeepCopy()
+	for i := range sized.Spec.Runtime.Sandbox.Containers {
+		container := &sized.Spec.Runtime.Sandbox.Containers[i]
+		if container.Resources == nil {
+			container.Resources = &computev1alpha.ContainerResourceRequirements{}
+		}
+		if container.Resources.Limits == nil {
+			container.Resources.Limits = core.ResourceList{}
+		}
+		if limit := container.Resources.Limits[core.ResourceCPU]; limit.IsZero() {
+			container.Resources.Limits[core.ResourceCPU] = cpu
+		}
+		if limit := container.Resources.Limits[core.ResourceMemory]; limit.IsZero() {
+			container.Resources.Limits[core.ResourceMemory] = memory
+		}
+	}
+	return sized, nil
+}
+
 func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *computev1alpha.Instance) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	desired, err := instancepod.BuildPod(instance, r.podOptions(instance))
+	// Size the instance against the published InstanceType catalog before the
+	// shared translation builds the Pod. The deep copy stops the injection from
+	// reaching the object this reconcile is built from; podOptions and every
+	// later reference still see the customer's instance unchanged.
+	sized, err := r.resolveInstanceTypeSizing(ctx, instance)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to size instance %s against the instance type catalog: %w", instance.Name, err)
+	}
+
+	desired, err := instancepod.BuildPod(sized, r.podOptions(sized))
 	if err != nil {
 		// A refused request fails identically on every retry. Changing it
 		// changes the instance spec, which triggers reconciliation again.

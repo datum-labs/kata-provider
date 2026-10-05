@@ -1,0 +1,112 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: instance-type-sizing
+  labels:
+    tier: portable
+spec:
+  description: |
+    Proves that an instance is programmed at the footprint its instance type
+    sells, resolved against the published InstanceType catalog before the
+    shared translation sizes the container.
+
+    Like instance-realization, this only asserts what the provider writes on
+    the downstream Pod spec, so it does not depend on the guest booting. The
+    Pod's container limits (and requests, which this provider keeps equal to
+    limits so the Pod lands in the guaranteed QoS class) are the footprint the
+    provider programs, and must equal what the compute controller claims quota
+    against:
+
+      - An Instance naming a published InstanceType is sized from that object,
+        wherever it lives in the resolution order.
+      - An Instance naming a type that is not published falls back to the
+        hardcoded catalog, so the instance still receives the footprint its
+        tier bills. The catalog canonicalizes a legacy slash name before the
+        lookup.
+
+  template: true
+
+  steps:
+    - name: publish-an-instancetype
+      description: |
+        Publish the InstanceType the first instance will name. Its sizing
+        (2 vCPU / 1 GiB) deliberately differs from the hardcoded catalog
+        (1 vCPU / 2 GiB), so the asserting step can tell which source sized
+        the Pod.
+      try:
+        - apply:
+            file: instance-type.yaml
+        - assert:
+            resource:
+              apiVersion: compute.datumapis.com/v1alpha
+              kind: InstanceType
+              metadata:
+                name: e2e-custom-2cpu-1gi
+              spec:
+                lifecycle:
+                  phase: Active
+        # The provider reads InstanceType back through its informer cache, and a
+        # Pod's limits are fixed when it is created. Give the watch event for
+        # the type just published time to reach that cache, so the Instance
+        # below is never sized before the provider can see the type.
+        - sleep:
+            duration: 5s
+
+    - name: a-published-instancetype-sizes-the-pod
+      description: |
+        The instance names the published type and states no container
+        resources, so the Pod's requests and limits can only come from that
+        object.
+      try:
+        - apply:
+            file: instance-published-type.yaml
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: e2e-published-type-instance
+                labels:
+                  managed-by: kata-provider
+                  upstream.instance: e2e-published-type-instance
+              spec:
+                runtimeClassName: ($values.runtimeClass)
+                containers:
+                  - name: app
+                    resources:
+                      requests:
+                        cpu: "2"
+                        memory: 1Gi
+                      limits:
+                        cpu: "2"
+                        memory: 1Gi
+
+    - name: an-unpublished-instancetype-falls-back-to-the-hardcoded-catalog
+      description: |
+        The instance names the catalog's baseline type with nothing published
+        under it, so the Pod's limits must come from the hardcoded catalog
+        (1 vCPU / 2 GiB) — the same values compute's quota path claims even
+        when no InstanceType object has been projected into the cell.
+      try:
+        - apply:
+            file: instance-catalog-type.yaml
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: e2e-catalog-type-instance
+                labels:
+                  managed-by: kata-provider
+                  upstream.instance: e2e-catalog-type-instance
+              spec:
+                runtimeClassName: ($values.runtimeClass)
+                containers:
+                  - name: app
+                    resources:
+                      requests:
+                        cpu: "1"
+                        memory: 2Gi
+                      limits:
+                        cpu: "1"
+                        memory: 2Gi
