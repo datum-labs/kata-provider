@@ -41,6 +41,14 @@ rules:
   - patch
   - update
 - apiGroups:
+  - compute.datumapis.com
+  resources:
+  - instancetypes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - node.k8s.io
   resources:
   - runtimeclasses

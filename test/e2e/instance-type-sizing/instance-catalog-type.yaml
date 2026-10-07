@@ -1,0 +1,29 @@
+# Names datumcloud-d1-standard-2, which is NOT published as an InstanceType
+# object in this environment, and sets no container resources. The provider's
+# live read finds nothing, so the Pod's limits must come from the hardcoded
+# catalog (1 vCPU / 2 GiB) — the same values compute's quota path claims. The
+# legacy slash name is what instances stored before the rename carry; the
+# catalog canonicalizes it before the lookup.
+#
+# A provider claims on the runtime-class label. Compute stamps the label from
+# spec.runtime.class, so the test stamps it too.
+apiVersion: compute.datumapis.com/v1alpha
+kind: Instance
+metadata:
+  name: e2e-catalog-type-instance
+  labels:
+    compute.datumapis.com/runtime-class: general-purpose
+spec:
+  runtime:
+    class: general-purpose
+    resources:
+      instanceType: datumcloud/d1-standard-2
+    sandbox:
+      containers:
+        - name: app
+          image: docker.io/library/busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+  networkInterfaces:
+    - name: eth0
+      network:
+        name: default
