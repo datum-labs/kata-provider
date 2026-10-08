@@ -120,6 +120,7 @@ config/overlays/cell     what a cell runs: leader election, RBAC, control-plane 
 config/overlays/dev      a single dev cluster: RBAC and a locally declared RuntimeClass
 config/overlays/runtime-rs-installer   places the Kata runtime-rs shim on Talos nodes
 config/components/node-telemetry     Kata pipeline for the shared compute collector
+config/components/resource-metrics   CPU and memory recording rules for Kata instances
 ```
 
 Create the provider namespace before applying the cell or dev overlay; neither
@@ -167,6 +168,14 @@ identity. Infra composes this component with the platform collector base and
 other runtime components. The provider always marks instance Pods for the Kata
 pipeline. Deploy that collector on every Kata node before rolling out the
 provider. The component does not deploy another collector.
+
+## Instance CPU and memory metrics
+
+The [resource metrics component](config/components/resource-metrics/README.md)
+records per-container CPU and memory usage from kubelet `/metrics/resource`.
+The cell overlay ships its `VMRule`. Infra must scrape that kubelet endpoint
+and select rules from the Kata provider namespace before the rule publishes
+samples. Customer metrics expose the container name as `instance_container`.
 
 ## Installing the runtime-rs shim on Talos
 

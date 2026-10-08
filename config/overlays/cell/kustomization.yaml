@@ -10,6 +10,7 @@ resources:
 components:
   - ../../components/leader_election
   - ../../components/controller_rbac
+  - ../../components/resource-metrics
 
 patches:
   - path: control-plane-scheduling-patch.yaml
