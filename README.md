@@ -59,13 +59,14 @@ cluster it runs in must already provide:
    uses `gosu` or `su-exec` to drop from root to a service account need in
    order to start. Privilege escalation is denied and the runtime's own seccomp
    profile applies. A container needing anything beyond that asks for it, and
-   the class grants any Linux capability on request.
+   the class grants Linux capabilities on request except `NET_ADMIN`, which
+   would let a container re-enable duplicate address detection in its guest.
 
    Those ten sit inside what `baseline` already permits, so the published
    default starts on an unexempted cell. A cell's profile must still admit the
    root user that most stock images start as, and whatever a customer's
-   containers request beyond the baseline list, such as `SYS_ADMIN` or
-   `NET_ADMIN`. `restricted` permits only `NET_BIND_SERVICE` and refuses root.
+   containers request beyond the baseline list, such as `SYS_ADMIN`.
+   `restricted` permits only `NET_BIND_SERVICE` and refuses root.
    A cell therefore exempts the Kata runtime class itself, through the API
    server's PodSecurity admission configuration, rather than exempting
    namespaces: the exemption then covers exactly the Pods that run in a virtual
@@ -153,6 +154,18 @@ through exactly those nameservers; the cluster's resolver and the node's
 `resolv.conf` play no part. Nameservers may be IPv4 or IPv6, and an IPv6-only
 list is valid. At least one nameserver is required, and the provider refuses to
 start without one. A tenant cannot change this per instance.
+
+### Instance IPv6 DAD
+
+The provider sets `net.ipv6.conf.all.accept_dad=0` and
+`net.ipv6.conf.default.accept_dad=0` on each instance Pod and withholds
+`NET_ADMIN` from tenant containers so they cannot turn DAD back on. These are
+unsafe Pod sysctls in Kubernetes. Before rolling out this provider, allow both
+names in the kubelet's `allowedUnsafeSysctls` on every node that runs Kata
+instances. The existing PodSecurity runtime-class exemption must also cover
+these Pods. Without the kubelet allow-list, new instances cannot start. The
+provider replaces existing instance Pods to apply the immutable sysctls, so
+rolling out this change restarts running instances.
 
 The ClusterRole in `config/components/controller_rbac/role.yaml` is generated
 from the kubebuilder markers in `internal/`. Change the markers and run

@@ -978,6 +978,9 @@ func TestReconcile_PodSecurityContext(t *testing.T) {
 	if got := pod.Spec.SecurityContext.SeccompProfile.Type; got != core.SeccompProfileTypeRuntimeDefault {
 		t.Errorf("seccompProfile.type = %q, want %q", got, core.SeccompProfileTypeRuntimeDefault)
 	}
+	if !slices.Equal(pod.Spec.SecurityContext.Sysctls, guestDADSysctls) {
+		t.Errorf("pod sysctls = %v, want %v", pod.Spec.SecurityContext.Sysctls, guestDADSysctls)
+	}
 
 	// The class exists to run stock images, and many of them start as root.
 	// Requiring a non-root user would fail the images the class promises to
@@ -1003,6 +1006,64 @@ func TestReconcile_PodSecurityContext(t *testing.T) {
 	}
 	if got := security.Capabilities.Add; len(got) != 0 {
 		t.Errorf("capabilities.add = %v, want nothing the instance did not state", got)
+	}
+}
+
+func TestReconcile_ReplacesPodWithoutGuestDADSysctls(t *testing.T) {
+	ctx := context.Background()
+	reconciler, fakeClient := newReconciler(t, nil, newTestInstance())
+	if _, err := reconciler.Reconcile(ctx, instanceRequest()); err != nil {
+		t.Fatalf("initial reconcile failed: %v", err)
+	}
+	pod, found := getPod(t, fakeClient)
+	if !found {
+		t.Fatal("expected an instance pod")
+	}
+	pod.Spec.SecurityContext.Sysctls = []core.Sysctl{
+		{Name: "net.ipv6.conf.all.accept_dad", Value: "1"},
+		{Name: "net.ipv6.conf.default.accept_dad", Value: "1"},
+	}
+	if err := fakeClient.Update(ctx, pod); err != nil {
+		t.Fatalf("failed to change pod sysctls: %v", err)
+	}
+
+	if _, err := reconciler.Reconcile(ctx, instanceRequest()); err != nil {
+		t.Fatalf("reconcile with stale guest policy failed: %v", err)
+	}
+	if _, found := getPod(t, fakeClient); found {
+		t.Fatal("expected the stale pod to be deleted so Kata creates a new namespace")
+	}
+	if _, err := reconciler.Reconcile(ctx, instanceRequest()); err != nil {
+		t.Fatalf("reconcile after pod deletion failed: %v", err)
+	}
+	pod, found = getPod(t, fakeClient)
+	if !found || !hasGuestDADSysctls(pod.Spec.SecurityContext) {
+		t.Fatalf("replacement pod has no DAD-off sysctls: %+v", pod)
+	}
+}
+
+func TestReconcile_StopsExistingPodWhenNetworkAdminIsRequested(t *testing.T) {
+	ctx := context.Background()
+	reconciler, fakeClient := newReconciler(t, nil, newTestInstance())
+	if _, err := reconciler.Reconcile(ctx, instanceRequest()); err != nil {
+		t.Fatalf("initial reconcile failed: %v", err)
+	}
+	var instance computev1alpha.Instance
+	if err := fakeClient.Get(ctx, instanceRequest().NamespacedName, &instance); err != nil {
+		t.Fatalf("failed to get instance: %v", err)
+	}
+	instance.Spec.Runtime.Sandbox.Containers[0].SecurityContext = &computev1alpha.SandboxSecurityContext{
+		Capabilities: &computev1alpha.SandboxCapabilities{Add: []computev1alpha.Capability{capNetAdmin}},
+	}
+	if err := fakeClient.Update(ctx, &instance); err != nil {
+		t.Fatalf("failed to request NET_ADMIN: %v", err)
+	}
+
+	if _, err := reconciler.Reconcile(ctx, instanceRequest()); err != nil {
+		t.Fatalf("reconcile after forbidden capability failed: %v", err)
+	}
+	if _, found := getPod(t, fakeClient); found {
+		t.Fatal("expected the old pod to be stopped before it can re-enable DAD")
 	}
 }
 
@@ -1430,7 +1491,7 @@ func TestReconcile_SubmittedPodNeverReachesTheHost(t *testing.T) {
 				Image: "docker.io/library/busybox:1.36",
 				SecurityContext: &computev1alpha.SandboxSecurityContext{
 					Capabilities: &computev1alpha.SandboxCapabilities{
-						Add:  []computev1alpha.Capability{capSysAdmin, capNetAdmin},
+						Add:  []computev1alpha.Capability{capSysAdmin},
 						Drop: []computev1alpha.Capability{computev1alpha.CapabilityAll},
 					},
 				},
@@ -1468,9 +1529,11 @@ func TestReconcile_SubmittedPodNeverReachesTheHost(t *testing.T) {
 		{Name: "net.ipv4.ip_forward", Value: "1"},
 		{Name: "net.ipv6.conf.all.forwarding", Value: "1"},
 		{Name: "net.ipv6.conf.default.forwarding", Value: "1"},
+		{Name: "net.ipv6.conf.all.accept_dad", Value: "0"},
+		{Name: "net.ipv6.conf.default.accept_dad", Value: "0"},
 	}
 	if spec.SecurityContext == nil || !slices.Equal(spec.SecurityContext.Sysctls, wantSysctls) {
-		t.Errorf("pod sysctls = %#v, want exact guest forwarding set %#v", spec.SecurityContext, wantSysctls)
+		t.Errorf("pod sysctls = %#v, want guest forwarding and DAD policy %#v", spec.SecurityContext, wantSysctls)
 	}
 	if spec.HostUsers != nil && *spec.HostUsers {
 		t.Error("pod explicitly runs in the host user namespace")
