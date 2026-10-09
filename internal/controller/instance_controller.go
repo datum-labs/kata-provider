@@ -287,31 +287,19 @@ func instanceTypeReaderFromClient(c client.Client) instanceTypeReader {
 	}
 }
 
-// resolveInstanceTypeSizing returns the instance to build the Pod from, with
-// sizing taken from the published InstanceType catalog rather than only from
-// the catalog compute's shared translation embeds. The shared translation
-// (instancepod.ContainerResources) treats a container limit as explicit and
-// lets it win over its hardcoded catalog, so injecting the resolved sizing as
-// limits makes the Pod run at the footprint the compute controller claimed
-// against, on whichever InstanceType path resolved it.
-//
-// Each dimension resolves independently and takes the first of:
-//  1. An explicit container limit — always wins and is never overwritten.
-//  2. The published InstanceType object the instance selects, read live via
-//     instanceTypeReaderFromClient, name canonicalized first. This is the same
-//     catalog the compute controller sizes quota claims from.
-//  3. The hardcoded catalog (instancetype.Lookup), which covers a type not yet
-//     published in this cell. Its Lookup canonicalizes a retired name, so an
-//     instance stored under the legacy slash name still resolves.
-//  4. Nothing: an unresolved instance is returned unchanged, and the shared
-//     translation's own fallback memory default applies, preserving prior
-//     behavior for unknown or empty instanceType.
-//
-// A transient read failure returns an error so the reconcile retries rather
-// than program the instance at a smaller size than its tier sells. A type
-// missing from the cluster (or the kind not served) falls through to the
-// hardcoded catalog.
+// resolveInstanceTypeSizing allocates the resource footprint Compute claims for
+// an instance across its containers. Complete explicit limits take precedence,
+// followed by complete instance requests, then the published or fallback tier.
+// Unspecified containers share the remaining budget instead of each receiving
+// the entire tier. The returned copy never changes the customer's Instance.
 func (r *InstanceReconciler) resolveInstanceTypeSizing(ctx context.Context, instance *computev1alpha.Instance) (*computev1alpha.Instance, error) {
+	if instance.Spec.Runtime.Sandbox == nil || len(instance.Spec.Runtime.Sandbox.Containers) == 0 {
+		return instance, nil
+	}
+	if cpu, memory, ok := explicitInstanceBudget(instance); ok {
+		return allocateInstanceBudget(instance, cpu, memory)
+	}
+
 	itName := instance.Spec.Runtime.Resources.InstanceType
 	if itName == "" {
 		return instance, nil
@@ -350,27 +338,7 @@ func (r *InstanceReconciler) resolveInstanceTypeSizing(ctx context.Context, inst
 		return instance, nil
 	}
 
-	if instance.Spec.Runtime.Sandbox == nil {
-		return instance, nil
-	}
-
-	sized := instance.DeepCopy()
-	for i := range sized.Spec.Runtime.Sandbox.Containers {
-		container := &sized.Spec.Runtime.Sandbox.Containers[i]
-		if container.Resources == nil {
-			container.Resources = &computev1alpha.ContainerResourceRequirements{}
-		}
-		if container.Resources.Limits == nil {
-			container.Resources.Limits = core.ResourceList{}
-		}
-		if limit := container.Resources.Limits[core.ResourceCPU]; limit.IsZero() {
-			container.Resources.Limits[core.ResourceCPU] = cpu
-		}
-		if limit := container.Resources.Limits[core.ResourceMemory]; limit.IsZero() {
-			container.Resources.Limits[core.ResourceMemory] = memory
-		}
-	}
-	return sized, nil
+	return allocateInstanceBudget(instance, cpu, memory)
 }
 
 func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *computev1alpha.Instance) (ctrl.Result, error) {
@@ -382,6 +350,12 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	// later reference still see the customer's instance unchanged.
 	sized, err := r.resolveInstanceTypeSizing(ctx, instance)
 	if err != nil {
+		var allocation *allocationError
+		if errors.As(err, &allocation) {
+			message := "The instance cannot start as configured. " + asSentence(allocation.Error()) +
+				" Adjust container limits or select an instance type that fits all containers."
+			return ctrl.Result{}, r.reportConfigurationError(ctx, instance, message)
+		}
 		return ctrl.Result{}, fmt.Errorf("failed to size instance %s against the instance type catalog: %w", instance.Name, err)
 	}
 
