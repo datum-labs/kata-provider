@@ -15,7 +15,7 @@ spec:
           label_replace(
             label_replace(
               (container_cpu_usage_seconds_total{job="kubelet-resource",container!="",container!="POD"} >= 0 and container_cpu_usage_seconds_total{job="kubelet-resource",container!="",container!="POD"} < +Inf)
-              * on(namespace,pod) group_left(node,uid)
+              * on(namespace,pod,node) group_left(uid)
                 max by(namespace,pod,node,uid) (kube_pod_info{node!=""})
               * on(namespace,pod) group_left(runtimeclass_name)
                 kube_pod_runtimeclass_name_info{runtimeclass_name=~"kata-clh|kata-qemu|katars"}
@@ -36,7 +36,7 @@ spec:
           label_replace(
             label_replace(
               (container_memory_working_set_bytes{job="kubelet-resource",container!="",container!="POD"} >= 0 and container_memory_working_set_bytes{job="kubelet-resource",container!="",container!="POD"} < +Inf)
-              * on(namespace,pod) group_left(node,uid)
+              * on(namespace,pod,node) group_left(uid)
                 max by(namespace,pod,node,uid) (kube_pod_info{node!=""})
               * on(namespace,pod) group_left(runtimeclass_name)
                 kube_pod_runtimeclass_name_info{runtimeclass_name=~"kata-clh|kata-qemu|katars"}
@@ -57,7 +57,7 @@ spec:
           label_replace(
             label_replace(
               (timestamp(container_cpu_usage_seconds_total{job="kubelet-resource",container!="",container!="POD"}) and (container_cpu_usage_seconds_total{job="kubelet-resource",container!="",container!="POD"} >= 0) and (container_cpu_usage_seconds_total{job="kubelet-resource",container!="",container!="POD"} < +Inf))
-              * on(namespace,pod) group_left(node,uid)
+              * on(namespace,pod,node) group_left(uid)
                 max by(namespace,pod,node,uid) (kube_pod_info{node!=""})
               * on(namespace,pod) group_left(runtimeclass_name)
                 kube_pod_runtimeclass_name_info{runtimeclass_name=~"kata-clh|kata-qemu|katars"}
@@ -78,7 +78,7 @@ spec:
           label_replace(
             label_replace(
               (timestamp(container_memory_working_set_bytes{job="kubelet-resource",container!="",container!="POD"}) and (container_memory_working_set_bytes{job="kubelet-resource",container!="",container!="POD"} >= 0) and (container_memory_working_set_bytes{job="kubelet-resource",container!="",container!="POD"} < +Inf))
-              * on(namespace,pod) group_left(node,uid)
+              * on(namespace,pod,node) group_left(uid)
                 max by(namespace,pod,node,uid) (kube_pod_info{node!=""})
               * on(namespace,pod) group_left(runtimeclass_name)
                 kube_pod_runtimeclass_name_info{runtimeclass_name=~"kata-clh|kata-qemu|katars"}

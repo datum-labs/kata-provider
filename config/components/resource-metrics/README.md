@@ -75,8 +75,10 @@ The CPU and memory recording rules also emit
 `datum_compute_instance_{cpu,memory}_source_timestamp_seconds`, with the same
 container identity and the Kubernetes Pod UID. Their values contain the source
 sample timestamp, rather than the recording-rule evaluation time. The source
-scrape uses `honorTimestamps: false`, so this is the kubelet collection time,
-not a guest-provided clock. Invalid or non-finite usage samples are excluded.
+scrape must honor the acquisition timestamps emitted by kubelet CPU and memory
+stats and attach the source node name. The recording rules join on that node
+as well as namespace and Pod name, so an old worker's measurements cannot be
+reattributed to a replacement Pod on another worker. Invalid or non-finite usage samples are excluded.
 
 The compute adapter can use these gauges to omit an entire Kata Pod if an
 expected container lacks CPU or memory data, either source is older than 90
