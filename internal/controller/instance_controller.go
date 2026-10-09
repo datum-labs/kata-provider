@@ -395,11 +395,6 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 		// A refused request fails identically on every retry. Changing it
 		// changes the instance spec, which triggers reconciliation again.
 		if message, refused := buildRefusalMessage(instance, err); refused {
-			if requestsNetworkAdmin(instance) {
-				if err := r.deleteManagedPod(ctx, instance); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to stop instance %s with forbidden network administration: %w", instance.Name, err)
-				}
-			}
 			logger.Info("instance configuration refused by its runtime class", "instance", instance.Name, "reason", err.Error())
 			return ctrl.Result{}, r.reportConfigurationError(ctx, instance, message)
 		}
@@ -494,31 +489,6 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	}
 
 	return ctrl.Result{}, nil
-}
-
-func requestsNetworkAdmin(instance *computev1alpha.Instance) bool {
-	for _, container := range instance.Spec.Runtime.Sandbox.Containers {
-		if container.SecurityContext == nil || container.SecurityContext.Capabilities == nil {
-			continue
-		}
-		for _, capability := range container.SecurityContext.Capabilities.Add {
-			if capability == "NET_ADMIN" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (r *InstanceReconciler) deleteManagedPod(ctx context.Context, instance *computev1alpha.Instance) error {
-	var pod core.Pod
-	if err := r.Get(ctx, client.ObjectKeyFromObject(instance), &pod); err != nil {
-		return client.IgnoreNotFound(err)
-	}
-	if pod.Labels[managedByLabel] != managedByValue || !pod.DeletionTimestamp.IsZero() {
-		return nil
-	}
-	return client.IgnoreNotFound(r.Delete(ctx, &pod))
 }
 
 // applyPodSecurityContext sets the Pod-level confinement of an instance's

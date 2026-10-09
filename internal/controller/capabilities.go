@@ -46,9 +46,7 @@ var Capabilities = runtimeclass.Capabilities{
 
 		// A stock image often needs a capability or two to start, for example
 		// to change file ownership. The class grants a small set by default
-		// and permits Linux capabilities except NET_ADMIN on request. The
-		// network configuration belongs to the provider, including disabled
-		// duplicate address detection. The default set is
+		// and permits any Linux capability on request. The default set is
 		// published as spec.defaultSecurityContext on the registered
 		// RuntimeClass; linuxCapabilities below is what may be requested.
 		runtimeclass.FeatureContainerCapabilities,
@@ -79,8 +77,7 @@ var supportedSysctls = []runtimeclass.Sysctl{
 	{Name: "net.ipv6.conf.default.forwarding", AllowedValues: []computev1alpha.SysctlValue{"0", "1"}},
 }
 
-// linuxCapabilities is the set the class grants. NET_ADMIN is withheld so a
-// tenant cannot re-enable IPv6 duplicate address detection in the guest.
+// linuxCapabilities is every Linux capability, which is what the class grants.
 //
 // A general-purpose instance is a virtual machine, so a capability acts on the
 // customer's own guest kernel rather than on the host. That boundary is why the
@@ -92,7 +89,7 @@ var linuxCapabilities = []runtimeclass.Capability{
 	"AUDIT_CONTROL", "AUDIT_READ", "AUDIT_WRITE", "BLOCK_SUSPEND", "BPF",
 	"CHECKPOINT_RESTORE", "CHOWN", "DAC_OVERRIDE", "DAC_READ_SEARCH", "FOWNER",
 	"FSETID", "IPC_LOCK", "IPC_OWNER", "KILL", "LEASE", "LINUX_IMMUTABLE",
-	"MAC_ADMIN", "MAC_OVERRIDE", "MKNOD", "NET_BIND_SERVICE",
+	"MAC_ADMIN", "MAC_OVERRIDE", "MKNOD", "NET_ADMIN", "NET_BIND_SERVICE",
 	"NET_BROADCAST", "NET_RAW", "PERFMON", "SETFCAP", "SETGID", "SETPCAP",
 	"SETUID", "SYSLOG", "SYS_ADMIN", "SYS_BOOT", "SYS_CHROOT", "SYS_MODULE",
 	"SYS_NICE", "SYS_PACCT", "SYS_PTRACE", "SYS_RAWIO", "SYS_RESOURCE",

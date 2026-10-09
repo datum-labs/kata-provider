@@ -223,23 +223,22 @@ func TestCapabilities_DefaultSecurityContextStaysMinimal(t *testing.T) {
 	}
 }
 
-// TestCapabilities_WithholdsNetworkAdministration keeps tenants from changing
-// the guest network's DAD setting after the provider disables it at boot.
-func TestCapabilities_WithholdsNetworkAdministration(t *testing.T) {
-	const grantableCapabilityCount = 40
+// TestCapabilities_GrantsEveryLinuxCapability pins the decision that a
+// general-purpose container may request any Linux capability, because the guest
+// kernel confines it. Narrowing the set is a change to what customers are
+// promised.
+func TestCapabilities_GrantsEveryLinuxCapability(t *testing.T) {
+	const linuxCapabilityCount = 41
 
 	unique := slices.Compact(sorted(Capabilities.GrantableCapabilities))
-	if len(unique) != grantableCapabilityCount || len(Capabilities.GrantableCapabilities) != grantableCapabilityCount {
-		t.Fatalf("grantable capabilities = %d (%d unique), want %d",
-			len(Capabilities.GrantableCapabilities), len(unique), grantableCapabilityCount)
+	if len(unique) != linuxCapabilityCount || len(Capabilities.GrantableCapabilities) != linuxCapabilityCount {
+		t.Fatalf("grantable capabilities = %d (%d unique), want every one of the %d Linux capabilities",
+			len(Capabilities.GrantableCapabilities), len(unique), linuxCapabilityCount)
 	}
-	for _, capability := range []runtimeclass.Capability{capChown, capSetuid, capSetgid, "DAC_OVERRIDE", capSysAdmin} {
+	for _, capability := range []runtimeclass.Capability{capChown, capSetuid, capSetgid, "DAC_OVERRIDE", capSysAdmin, capNetAdmin} {
 		if !Capabilities.Grants(capability) {
 			t.Errorf("Grants(%s) = false, want true", capability)
 		}
-	}
-	if Capabilities.Grants(capNetAdmin) {
-		t.Error("Grants(NET_ADMIN) = true; tenants could re-enable DAD")
 	}
 	if Capabilities.Grants(computev1alpha.CapabilityAll) {
 		t.Error("Grants(ALL) = true; a container must name what it needs")

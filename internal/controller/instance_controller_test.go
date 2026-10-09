@@ -1042,31 +1042,6 @@ func TestReconcile_ReplacesPodWithoutGuestDADSysctls(t *testing.T) {
 	}
 }
 
-func TestReconcile_StopsExistingPodWhenNetworkAdminIsRequested(t *testing.T) {
-	ctx := context.Background()
-	reconciler, fakeClient := newReconciler(t, nil, newTestInstance())
-	if _, err := reconciler.Reconcile(ctx, instanceRequest()); err != nil {
-		t.Fatalf("initial reconcile failed: %v", err)
-	}
-	var instance computev1alpha.Instance
-	if err := fakeClient.Get(ctx, instanceRequest().NamespacedName, &instance); err != nil {
-		t.Fatalf("failed to get instance: %v", err)
-	}
-	instance.Spec.Runtime.Sandbox.Containers[0].SecurityContext = &computev1alpha.SandboxSecurityContext{
-		Capabilities: &computev1alpha.SandboxCapabilities{Add: []computev1alpha.Capability{capNetAdmin}},
-	}
-	if err := fakeClient.Update(ctx, &instance); err != nil {
-		t.Fatalf("failed to request NET_ADMIN: %v", err)
-	}
-
-	if _, err := reconciler.Reconcile(ctx, instanceRequest()); err != nil {
-		t.Fatalf("reconcile after forbidden capability failed: %v", err)
-	}
-	if _, found := getPod(t, fakeClient); found {
-		t.Fatal("expected the old pod to be stopped before it can re-enable DAD")
-	}
-}
-
 // TestReconcile_ContainerCapabilities covers the promise that an instance runs
 // the confinement it states and nothing more. The class publishes what a
 // container gets when it states nothing, and compute stamps that onto the
