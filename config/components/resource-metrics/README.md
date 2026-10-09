@@ -68,3 +68,26 @@ datum_compute_instance_memory_working_set_bytes{
   instance_container="<container>"
 }
 ```
+
+## Autoscaling freshness
+
+The CPU and memory recording rules also emit
+`datum_compute_instance_{cpu,memory}_source_timestamp_seconds`, with the same
+container identity and the Kubernetes Pod UID. Their values contain the source
+sample timestamp, rather than the recording-rule evaluation time. The source
+scrape uses `honorTimestamps: false`, so this is the kubelet collection time,
+not a guest-provided clock. Invalid or non-finite usage samples are excluded.
+
+The compute adapter can use these gauges to omit an entire Kata Pod if an
+expected container lacks CPU or memory data, either source is older than 90
+seconds, or the sample predates the current Pod. Omitting incomplete data
+prevents the adapter from filling a missing resource with zero. This contract
+requires current kube-state-metrics Pod UID, creation, and container identity
+series. The adapter query still reports query time in `PodMetrics.Timestamp`;
+these gauges enforce a bounded collection age and do not repair that API field.
+
+Run the exact shipped recording rules with `promtool` on PATH:
+
+```sh
+go test -count=1 ./test/resource-metrics
+```

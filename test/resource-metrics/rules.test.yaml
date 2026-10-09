@@ -1,0 +1,144 @@
+rule_files:
+- rules.yaml
+evaluation_interval: 30s
+tests:
+- name: source timestamps retain collection time when source stops
+  interval: 30s
+  input_series:
+  - series: container_cpu_usage_seconds_total{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: 0+3x2 _x10
+  - series: container_memory_working_set_bytes{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: 10x2 _x10
+  - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
+    values: 1x12
+  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+    values: 1x12
+  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+    values: 1x12
+  - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
+    values: 1x12
+  promql_expr_test:
+  - expr: datum_compute_instance_cpu_source_timestamp_seconds
+    eval_time: 3m
+    exp_samples:
+    - labels: datum_compute_instance_cpu_source_timestamp_seconds{job="kubelet-resource",namespace="a",pod="app",container="app",node="worker",uid="current",runtimeclass_name="katars",label_upstream_instance="instance",label_meta_datumapis_com_upstream_cluster_name="cluster-project",resource_name="instance",resourcemanager_datumapis_com_project_name="project",runtime_class="general-purpose"}
+      value: 60
+  - expr: datum_compute_instance_memory_source_timestamp_seconds
+    eval_time: 3m
+    exp_samples:
+    - labels: datum_compute_instance_memory_source_timestamp_seconds{job="kubelet-resource",namespace="a",pod="app",container="app",node="worker",uid="current",runtimeclass_name="katars",label_upstream_instance="instance",label_meta_datumapis_com_upstream_cluster_name="cluster-project",resource_name="instance",resourcemanager_datumapis_com_project_name="project",runtime_class="general-purpose"}
+      value: 60
+- input_series:
+  - series: container_cpu_usage_seconds_total{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+  - series: container_memory_working_set_bytes{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: 10x2 _x10
+  - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
+    values: 1x12
+  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+    values: 1x12
+  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+    values: 1x12
+  - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
+    values: 1x12
+  interval: 30s
+  name: invalid source container_cpu_usage_seconds_total NaN
+  promql_expr_test:
+  - expr: datum_compute_instance_cpu_source_timestamp_seconds
+    eval_time: 3m
+    exp_samples: []
+- input_series:
+  - series: container_cpu_usage_seconds_total{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+  - series: container_memory_working_set_bytes{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: 10x2 _x10
+  - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
+    values: 1x12
+  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+    values: 1x12
+  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+    values: 1x12
+  - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
+    values: 1x12
+  interval: 30s
+  name: invalid source container_cpu_usage_seconds_total -1
+  promql_expr_test:
+  - expr: datum_compute_instance_cpu_source_timestamp_seconds
+    eval_time: 3m
+    exp_samples: []
+- input_series:
+  - series: container_cpu_usage_seconds_total{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf
+  - series: container_memory_working_set_bytes{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: 10x2 _x10
+  - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
+    values: 1x12
+  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+    values: 1x12
+  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+    values: 1x12
+  - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
+    values: 1x12
+  interval: 30s
+  name: invalid source container_cpu_usage_seconds_total +Inf
+  promql_expr_test:
+  - expr: datum_compute_instance_cpu_source_timestamp_seconds
+    eval_time: 3m
+    exp_samples: []
+- input_series:
+  - series: container_cpu_usage_seconds_total{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: 0+3x2 _x10
+  - series: container_memory_working_set_bytes{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+  - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
+    values: 1x12
+  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+    values: 1x12
+  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+    values: 1x12
+  - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
+    values: 1x12
+  interval: 30s
+  name: invalid source container_memory_working_set_bytes NaN
+  promql_expr_test:
+  - expr: datum_compute_instance_memory_source_timestamp_seconds
+    eval_time: 3m
+    exp_samples: []
+- input_series:
+  - series: container_cpu_usage_seconds_total{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: 0+3x2 _x10
+  - series: container_memory_working_set_bytes{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+  - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
+    values: 1x12
+  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+    values: 1x12
+  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+    values: 1x12
+  - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
+    values: 1x12
+  interval: 30s
+  name: invalid source container_memory_working_set_bytes -1
+  promql_expr_test:
+  - expr: datum_compute_instance_memory_source_timestamp_seconds
+    eval_time: 3m
+    exp_samples: []
+- input_series:
+  - series: container_cpu_usage_seconds_total{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: 0+3x2 _x10
+  - series: container_memory_working_set_bytes{job="kubelet-resource",namespace="a",pod="app",container="app"}
+    values: +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf
+  - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
+    values: 1x12
+  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+    values: 1x12
+  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+    values: 1x12
+  - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
+    values: 1x12
+  interval: 30s
+  name: invalid source container_memory_working_set_bytes +Inf
+  promql_expr_test:
+  - expr: datum_compute_instance_memory_source_timestamp_seconds
+    eval_time: 3m
+    exp_samples: []
