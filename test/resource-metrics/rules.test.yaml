@@ -11,9 +11,9 @@ tests:
     values: 10x2 _x10
   - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
     values: 1x12
-  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+  - series: kube_pod_runtimeclass_name_info{uid="current",namespace="a",pod="app",runtimeclass_name="katars"}
     values: 1x12
-  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+  - series: kube_pod_labels{uid="current",namespace="a",pod="app",label_upstream_instance="instance"}
     values: 1x12
   - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
     values: 1x12
@@ -35,9 +35,9 @@ tests:
     values: 10x2 _x10
   - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
     values: 1x12
-  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+  - series: kube_pod_runtimeclass_name_info{uid="current",namespace="a",pod="app",runtimeclass_name="katars"}
     values: 1x12
-  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+  - series: kube_pod_labels{uid="current",namespace="a",pod="app",label_upstream_instance="instance"}
     values: 1x12
   - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
     values: 1x12
@@ -54,9 +54,9 @@ tests:
     values: 10x2 _x10
   - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
     values: 1x12
-  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+  - series: kube_pod_runtimeclass_name_info{uid="current",namespace="a",pod="app",runtimeclass_name="katars"}
     values: 1x12
-  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+  - series: kube_pod_labels{uid="current",namespace="a",pod="app",label_upstream_instance="instance"}
     values: 1x12
   - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
     values: 1x12
@@ -73,9 +73,9 @@ tests:
     values: 10x2 _x10
   - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
     values: 1x12
-  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+  - series: kube_pod_runtimeclass_name_info{uid="current",namespace="a",pod="app",runtimeclass_name="katars"}
     values: 1x12
-  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+  - series: kube_pod_labels{uid="current",namespace="a",pod="app",label_upstream_instance="instance"}
     values: 1x12
   - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
     values: 1x12
@@ -92,9 +92,9 @@ tests:
     values: NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
   - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
     values: 1x12
-  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+  - series: kube_pod_runtimeclass_name_info{uid="current",namespace="a",pod="app",runtimeclass_name="katars"}
     values: 1x12
-  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+  - series: kube_pod_labels{uid="current",namespace="a",pod="app",label_upstream_instance="instance"}
     values: 1x12
   - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
     values: 1x12
@@ -111,9 +111,9 @@ tests:
     values: -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
   - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
     values: 1x12
-  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+  - series: kube_pod_runtimeclass_name_info{uid="current",namespace="a",pod="app",runtimeclass_name="katars"}
     values: 1x12
-  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+  - series: kube_pod_labels{uid="current",namespace="a",pod="app",label_upstream_instance="instance"}
     values: 1x12
   - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
     values: 1x12
@@ -130,9 +130,9 @@ tests:
     values: +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf +Inf
   - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
     values: 1x12
-  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+  - series: kube_pod_runtimeclass_name_info{uid="current",namespace="a",pod="app",runtimeclass_name="katars"}
     values: 1x12
-  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+  - series: kube_pod_labels{uid="current",namespace="a",pod="app",label_upstream_instance="instance"}
     values: 1x12
   - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
     values: 1x12
@@ -151,9 +151,9 @@ tests:
     values: 10x12
   - series: kube_pod_info{namespace="a",pod="app",node="worker",uid="current"}
     values: 1x12
-  - series: kube_pod_runtimeclass_name_info{namespace="a",pod="app",runtimeclass_name="katars"}
+  - series: kube_pod_runtimeclass_name_info{uid="current",namespace="a",pod="app",runtimeclass_name="katars"}
     values: 1x12
-  - series: kube_pod_labels{namespace="a",pod="app",label_upstream_instance="instance"}
+  - series: kube_pod_labels{uid="current",namespace="a",pod="app",label_upstream_instance="instance"}
     values: 1x12
   - series: kube_namespace_labels{namespace="a",label_meta_datumapis_com_upstream_cluster_name="cluster-project"}
     values: 1x12

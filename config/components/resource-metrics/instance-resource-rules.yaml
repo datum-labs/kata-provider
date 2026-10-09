@@ -17,9 +17,9 @@ spec:
               (container_cpu_usage_seconds_total{job="kubelet-resource",container!="",container!="POD"} >= 0 and container_cpu_usage_seconds_total{job="kubelet-resource",container!="",container!="POD"} < +Inf)
               * on(namespace,pod,node) group_left(uid)
                 max by(namespace,pod,node,uid) (kube_pod_info{node!=""})
-              * on(namespace,pod) group_left(runtimeclass_name)
+              * on(namespace,pod,uid) group_left(runtimeclass_name)
                 kube_pod_runtimeclass_name_info{runtimeclass_name=~"kata-clh|kata-qemu|katars"}
-              * on(namespace,pod) group_left(label_upstream_instance)
+              * on(namespace,pod,uid) group_left(label_upstream_instance)
                 kube_pod_labels{label_upstream_instance!=""}
               * on(namespace) group_left(label_meta_datumapis_com_upstream_cluster_name)
                 kube_namespace_labels{label_meta_datumapis_com_upstream_cluster_name=~"cluster-.+"},
@@ -38,9 +38,9 @@ spec:
               (container_memory_working_set_bytes{job="kubelet-resource",container!="",container!="POD"} >= 0 and container_memory_working_set_bytes{job="kubelet-resource",container!="",container!="POD"} < +Inf)
               * on(namespace,pod,node) group_left(uid)
                 max by(namespace,pod,node,uid) (kube_pod_info{node!=""})
-              * on(namespace,pod) group_left(runtimeclass_name)
+              * on(namespace,pod,uid) group_left(runtimeclass_name)
                 kube_pod_runtimeclass_name_info{runtimeclass_name=~"kata-clh|kata-qemu|katars"}
-              * on(namespace,pod) group_left(label_upstream_instance)
+              * on(namespace,pod,uid) group_left(label_upstream_instance)
                 kube_pod_labels{label_upstream_instance!=""}
               * on(namespace) group_left(label_meta_datumapis_com_upstream_cluster_name)
                 kube_namespace_labels{label_meta_datumapis_com_upstream_cluster_name=~"cluster-.+"},
@@ -59,9 +59,9 @@ spec:
               (timestamp(container_cpu_usage_seconds_total{job="kubelet-resource",container!="",container!="POD"}) and (container_cpu_usage_seconds_total{job="kubelet-resource",container!="",container!="POD"} >= 0) and (container_cpu_usage_seconds_total{job="kubelet-resource",container!="",container!="POD"} < +Inf))
               * on(namespace,pod,node) group_left(uid)
                 max by(namespace,pod,node,uid) (kube_pod_info{node!=""})
-              * on(namespace,pod) group_left(runtimeclass_name)
+              * on(namespace,pod,uid) group_left(runtimeclass_name)
                 kube_pod_runtimeclass_name_info{runtimeclass_name=~"kata-clh|kata-qemu|katars"}
-              * on(namespace,pod) group_left(label_upstream_instance)
+              * on(namespace,pod,uid) group_left(label_upstream_instance)
                 kube_pod_labels{label_upstream_instance!=""}
               * on(namespace) group_left(label_meta_datumapis_com_upstream_cluster_name)
                 kube_namespace_labels{label_meta_datumapis_com_upstream_cluster_name=~"cluster-.+"},
@@ -80,9 +80,9 @@ spec:
               (timestamp(container_memory_working_set_bytes{job="kubelet-resource",container!="",container!="POD"}) and (container_memory_working_set_bytes{job="kubelet-resource",container!="",container!="POD"} >= 0) and (container_memory_working_set_bytes{job="kubelet-resource",container!="",container!="POD"} < +Inf))
               * on(namespace,pod,node) group_left(uid)
                 max by(namespace,pod,node,uid) (kube_pod_info{node!=""})
-              * on(namespace,pod) group_left(runtimeclass_name)
+              * on(namespace,pod,uid) group_left(runtimeclass_name)
                 kube_pod_runtimeclass_name_info{runtimeclass_name=~"kata-clh|kata-qemu|katars"}
-              * on(namespace,pod) group_left(label_upstream_instance)
+              * on(namespace,pod,uid) group_left(label_upstream_instance)
                 kube_pod_labels{label_upstream_instance!=""}
               * on(namespace) group_left(label_meta_datumapis_com_upstream_cluster_name)
                 kube_namespace_labels{label_meta_datumapis_com_upstream_cluster_name=~"cluster-.+"},
