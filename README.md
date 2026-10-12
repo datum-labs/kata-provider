@@ -154,6 +154,22 @@ through exactly those nameservers; the cluster's resolver and the node's
 list is valid. At least one nameserver is required, and the provider refuses to
 start without one. A tenant cannot change this per instance.
 
+### Instance IPv6 DAD
+
+The provider sets `net.ipv6.conf.all.accept_dad=0` and
+`net.ipv6.conf.default.accept_dad=0` on each instance Pod. Tenants cannot
+request a different DAD value through the class's supported sandbox sysctls.
+These are unsafe Pod sysctls in Kubernetes. Before rolling out this provider, allow both
+names in the kubelet's `allowedUnsafeSysctls` on every node that runs Kata
+instances. The existing PodSecurity runtime-class exemption must also cover
+these Pods. Without the kubelet allow-list, new instances cannot start. The
+provider replaces existing instance Pods to apply the immutable sysctls, so
+rolling out this change restarts running instances.
+
+The class continues to grant `NET_ADMIN` on request. A container with guest
+network administration privileges can change network settings after startup;
+the provider enforces the Pod configuration, not immutable guest kernel state.
+
 The ClusterRole in `config/components/controller_rbac/role.yaml` is generated
 from the kubebuilder markers in `internal/`. Change the markers and run
 `make manifests`; a hand-edit there disappears on the next regeneration and

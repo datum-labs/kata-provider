@@ -79,6 +79,11 @@ const (
 	nativeLogsLabelValue = "true"
 )
 
+var guestDADSysctls = []core.Sysctl{
+	{Name: "net.ipv6.conf.all.accept_dad", Value: "0"},
+	{Name: "net.ipv6.conf.default.accept_dad", Value: "0"},
+}
+
 // DefaultNodeSelector places instance Pods on nodes where the Kata runtime is
 // installed. kata-deploy labels every node it provisioned with this label, so
 // the selector works on an unmodified installation.
@@ -404,6 +409,22 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	applyPodSecurityContext(&desired.Spec)
 	applyInstanceDNS(&desired.Spec, r.instanceDNS())
 
+	// Pod sysctls are immutable. Replace Pods created before this policy so
+	// Kata creates their guest network namespaces with DAD disabled.
+	var existing core.Pod
+	if err := r.Get(ctx, client.ObjectKeyFromObject(desired), &existing); err == nil {
+		if existing.Labels[managedByLabel] == managedByValue && !hasGuestDADSysctls(existing.Spec.SecurityContext) {
+			if existing.DeletionTimestamp.IsZero() {
+				if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, fmt.Errorf("failed to replace instance pod %s for guest network policy: %w", existing.Name, err)
+				}
+			}
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, fmt.Errorf("failed to check instance pod %s for guest network policy: %w", instance.Name, err)
+	}
+
 	pod := &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name,
@@ -499,6 +520,9 @@ func applyPodSecurityContext(spec *core.PodSpec) {
 		spec.SecurityContext = &core.PodSecurityContext{}
 	}
 	spec.SecurityContext.SeccompProfile = &core.SeccompProfile{Type: core.SeccompProfileTypeRuntimeDefault}
+	// The shared builder has already validated tenant forwarding sysctls.
+	// Keep those values while forcing DAD off for every instance.
+	spec.SecurityContext.Sysctls = append(slices.Clone(spec.SecurityContext.Sysctls), guestDADSysctls...)
 }
 
 // applyInstanceDNS points an instance at the resolvers its deployment chose.
@@ -515,6 +539,32 @@ func applyInstanceDNS(spec *core.PodSpec, dns *core.PodDNSConfig) {
 	}
 	spec.DNSPolicy = core.DNSNone
 	spec.DNSConfig = dns.DeepCopy()
+}
+
+func hasGuestDADSysctls(security *core.PodSecurityContext) bool {
+	if security == nil {
+		return false
+	}
+	for _, required := range guestDADSysctls {
+		count := 0
+		for _, actual := range security.Sysctls {
+			if actual.Name == required.Name {
+				if actual.Value != required.Value {
+					return false
+				}
+				count++
+			}
+		}
+		if count != 1 {
+			return false
+		}
+	}
+	for _, actual := range security.Sysctls {
+		if strings.HasSuffix(actual.Name, ".accept_dad") && actual.Value != "0" {
+			return false
+		}
+	}
+	return true
 }
 
 // podCreationDeclined reports whether the API server refused a new instance Pod

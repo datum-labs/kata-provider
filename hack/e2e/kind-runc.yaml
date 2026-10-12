@@ -8,3 +8,9 @@ apiVersion: kind.x-k8s.io/v1alpha4
 name: kata-provider-runc
 nodes:
   - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: KubeletConfiguration
+        allowedUnsafeSysctls:
+          - net.ipv6.conf.all.accept_dad
+          - net.ipv6.conf.default.accept_dad
