@@ -14,3 +14,4 @@ components:
 
 patches:
   - path: control-plane-scheduling-patch.yaml
+  - path: overcommit-patch.yaml

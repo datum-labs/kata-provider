@@ -124,6 +124,11 @@ type InstanceReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	Config *config.KataProvider
+
+	// CPURequestPercent and MemoryRequestPercent set instance Pod requests as a
+	// percentage of limits. Zero means 100: no overcommit.
+	CPURequestPercent    int
+	MemoryRequestPercent int
 }
 
 func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -408,6 +413,7 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 
 	applyPodSecurityContext(&desired.Spec)
 	applyInstanceDNS(&desired.Spec, r.instanceDNS())
+	applyResourceOvercommit(&desired.Spec, r.CPURequestPercent, r.MemoryRequestPercent)
 
 	// Pod sysctls are immutable. Replace Pods created before this policy so
 	// Kata creates their guest network namespaces with DAD disabled.
@@ -539,6 +545,34 @@ func applyInstanceDNS(spec *core.PodSpec, dns *core.PodDNSConfig) {
 	}
 	spec.DNSPolicy = core.DNSNone
 	spec.DNSConfig = dns.DeepCopy()
+}
+
+// applyResourceOvercommit sets each container's requests to a percentage of
+// its limits, rounded up. Kata sizes the guest from the limits, so only
+// scheduling changes. Requests are set rather than removed because the API
+// server defaults a missing request to the limit.
+func applyResourceOvercommit(spec *core.PodSpec, cpuPercent, memoryPercent int) {
+	for i := range spec.Containers {
+		res := &spec.Containers[i].Resources
+		if res.Requests == nil {
+			res.Requests = core.ResourceList{}
+		}
+		if limit, ok := res.Limits[core.ResourceCPU]; ok && overcommits(cpuPercent) {
+			res.Requests[core.ResourceCPU] = *resource.NewMilliQuantity(percentOf(limit.MilliValue(), cpuPercent), resource.DecimalSI)
+		}
+		if limit, ok := res.Limits[core.ResourceMemory]; ok && overcommits(memoryPercent) {
+			res.Requests[core.ResourceMemory] = *resource.NewQuantity(percentOf(limit.Value(), memoryPercent), resource.BinarySI)
+		}
+	}
+}
+
+func overcommits(percent int) bool {
+	return percent > 0 && percent < 100
+}
+
+// percentOf returns percent of value, rounded up.
+func percentOf(value int64, percent int) int64 {
+	return (value*int64(percent) + 99) / 100
 }
 
 func hasGuestDADSysctls(security *core.PodSecurityContext) bool {

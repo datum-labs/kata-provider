@@ -1,0 +1,17 @@
+# Instance Pods request this percentage of their limits; guests still boot at
+# full size. Memory is overcommitted less because running out of it kills
+# instances, while CPU contention only slows them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kata-provider
+spec:
+  template:
+    spec:
+      containers:
+        - name: manager
+          env:
+            - name: CPU_REQUEST_PERCENT
+              value: "10"
+            - name: MEMORY_REQUEST_PERCENT
+              value: "50"
