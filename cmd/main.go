@@ -3,10 +3,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"time"
 
 	// Import every Kubernetes client authentication plugin, for example Azure,
@@ -93,6 +95,13 @@ func main() {
 
 	setupLog.Info("server config", "config", serverConfig)
 
+	cpuRequestPercent, cpuErr := requestPercentFromEnv("CPU_REQUEST_PERCENT")
+	memoryRequestPercent, memoryErr := requestPercentFromEnv("MEMORY_REQUEST_PERCENT")
+	if err := errors.Join(cpuErr, memoryErr); err != nil {
+		setupLog.Error(err, "invalid overcommit setting")
+		os.Exit(1)
+	}
+
 	cfg := ctrl.GetConfigOrDie()
 	ctx := ctrl.SetupSignalHandler()
 
@@ -117,7 +126,9 @@ func main() {
 	}
 
 	if err = (&controller.InstanceReconciler{
-		Config: &serverConfig,
+		Config:               &serverConfig,
+		CPURequestPercent:    cpuRequestPercent,
+		MemoryRequestPercent: memoryRequestPercent,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "InstanceReconciler")
 		os.Exit(1)
@@ -137,6 +148,8 @@ func main() {
 	setupLog.Info("starting manager",
 		"runtimeClass", controller.RuntimeClassName,
 		"runtimeHandler", serverConfig.DownstreamResourceManagement.RuntimeHandler,
+		"cpuRequestPercent", cpuRequestPercent,
+		"memoryRequestPercent", memoryRequestPercent,
 	)
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
@@ -148,6 +161,20 @@ const (
 	leaderElectionQPS   = 5
 	leaderElectionBurst = 10
 )
+
+// requestPercentFromEnv returns the percentage in the named environment
+// variable, or 100 if it is unset.
+func requestPercentFromEnv(name string) (int, error) {
+	value := os.Getenv(name)
+	if value == "" {
+		return 100, nil
+	}
+	percent, err := strconv.Atoi(value)
+	if err != nil || percent < 1 || percent > 100 {
+		return 0, fmt.Errorf("%s=%q: want an integer from 1 to 100", name, value)
+	}
+	return percent, nil
+}
 
 func leaderElectionRestConfig(base *rest.Config) *rest.Config {
 	cfg := rest.CopyConfig(base)
