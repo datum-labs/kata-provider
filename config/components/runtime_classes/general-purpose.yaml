@@ -33,6 +33,7 @@ spec:
       - containerCapabilities
       - sandboxSysctls
       - exec
+      - gracefulTermination
     # Every Linux capability. A capability acts inside the instance's own
     # virtual machine, whose kernel confines it, so granting one gives no access
     # to the machine running the instance.

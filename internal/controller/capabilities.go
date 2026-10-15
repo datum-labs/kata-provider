@@ -62,6 +62,11 @@ var Capabilities = runtimeclass.Capabilities{
 		// shares the cell Instance's namespace and name and is controlled by
 		// it, which is how the cell's shell agent finds it.
 		runtimeclass.FeatureExec,
+
+		// The kubelet's stop timeout reaches the Kata agent, which sends
+		// SIGTERM to the container process inside the guest and kills it once
+		// the Pod's grace period ends.
+		runtimeclass.FeatureGracefulTermination,
 	},
 	GrantableCapabilities: linuxCapabilities,
 	SupportedSysctls:      supportedSysctls,
