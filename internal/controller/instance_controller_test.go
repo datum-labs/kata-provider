@@ -593,6 +593,25 @@ func TestReconcile_TenantAnnotationsNeverReachThePod(t *testing.T) {
 	}
 }
 
+// TestReconcile_TerminationGracePeriod checks that the instance's grace period
+// reaches its Pod, which is what the kubelet waits on before killing the guest.
+func TestReconcile_TerminationGracePeriod(t *testing.T) {
+	reconciler, fakeClient := newReconciler(t, nil, newTestInstance(func(i *computev1alpha.Instance) {
+		i.Spec.Runtime.TerminationGracePeriodSeconds = ptr.To[int64](90)
+	}))
+
+	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	pod, found := getPod(t, fakeClient)
+	if !found {
+		t.Fatal("expected the instance pod to be created")
+	}
+	if got := pod.Spec.TerminationGracePeriodSeconds; got == nil || *got != 90 {
+		t.Errorf("TerminationGracePeriodSeconds = %v, want 90", got)
+	}
+}
+
 // TestReconcile_SuspendAndResume checks that suspending stops the instance
 // without releasing anything else it holds, and that resuming starts it again.
 func TestReconcile_SuspendAndResume(t *testing.T) {
