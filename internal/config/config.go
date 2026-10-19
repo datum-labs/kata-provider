@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -110,6 +111,11 @@ func (m *MetricsServerConfig) Options(_ context.Context, _ client.Client) metric
 // the kubelet resolves them under its own node identity. The provider never
 // reads or mirrors their contents.
 type DownstreamResourceManagementConfig struct {
+	// ShellReaperImage is an immutable compute release image containing the
+	// /shell-reaper binary. Setting it opts instance Pods into process-safe
+	// shell sessions. Existing Pods are replaced during the opt-in rollout.
+	// +optional
+	ShellReaperImage string `json:"shellReaperImage,omitempty"`
 	// NodeSelector overrides the node selector that the provider applies to
 	// every instance Pod. When the field is unset, the provider selects
 	// DefaultNodeSelector, which is the label that kata-deploy applies to every
@@ -190,6 +196,9 @@ type DownstreamResourceManagementConfig struct {
 // admission. Reporting it at startup, rather than on the first instance, keeps
 // a misconfigured deployment from looking healthy until a tenant arrives.
 func (c *DownstreamResourceManagementConfig) Validate() error {
+	if c.ShellReaperImage != "" && !regexp.MustCompile(`@sha256:[0-9a-f]{64}$`).MatchString(c.ShellReaperImage) {
+		return errors.New("shellReaperImage must be pinned to a sha256 image digest")
+	}
 	if c.InstanceDNS == nil {
 		return nil
 	}

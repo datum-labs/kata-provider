@@ -419,6 +419,18 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	// Kata creates their guest network namespaces with DAD disabled.
 	var existing core.Pod
 	if err := r.Get(ctx, client.ObjectKeyFromObject(desired), &existing); err == nil {
+		// This opt-in migration is disruptive, so cells set the image digest
+		// only during a planned rollout. Old Pods cannot gain an init container
+		// or volume mount in place; recreate them once to supply the helper.
+		if r.Config != nil && r.Config.DownstreamResourceManagement.ShellReaperImage != "" &&
+			existing.Labels[managedByLabel] == managedByValue && !hasShellReaper(existing.Spec, r.Config.DownstreamResourceManagement.ShellReaperImage) {
+			if existing.DeletionTimestamp.IsZero() {
+				if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, fmt.Errorf("failed to replace instance pod %s for shell reaper: %w", existing.Name, err)
+				}
+			}
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
 		if existing.Labels[managedByLabel] == managedByValue && !hasGuestDADSysctls(existing.Spec.SecurityContext) {
 			if existing.DeletionTimestamp.IsZero() {
 				if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
@@ -495,6 +507,15 @@ func (r *InstanceReconciler) reconcileInstance(ctx context.Context, instance *co
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func hasShellReaper(spec core.PodSpec, image string) bool {
+	for _, c := range spec.InitContainers {
+		if c.Name == "datum-shell-install" && c.Image == image {
+			return true
+		}
+	}
+	return false
 }
 
 // applyPodSecurityContext sets the Pod-level confinement of an instance's
@@ -752,15 +773,23 @@ func asSentence(detail string) string {
 // cannot drift into two dialects of the same instance.
 func (r *InstanceReconciler) podOptions(instance *computev1alpha.Instance) instancepod.Options {
 	return instancepod.Options{
-		Capabilities: Capabilities,
-		NodeSelector: r.nodeSelector(),
-		Tolerations:  r.tolerations(),
+		Capabilities:     Capabilities,
+		ShellReaperImage: r.shellReaperImage(),
+		NodeSelector:     r.nodeSelector(),
+		Tolerations:      r.tolerations(),
 		PodLabels: map[string]string{
 			managedByLabel: managedByValue,
 			instanceLabel:  instance.Name,
 		},
 		PodAnnotations: podAnnotations(nil),
 	}
+}
+
+func (r *InstanceReconciler) shellReaperImage() string {
+	if r.Config == nil {
+		return ""
+	}
+	return r.Config.DownstreamResourceManagement.ShellReaperImage
 }
 
 // podAnnotations returns the annotations that an instance Pod carries, given

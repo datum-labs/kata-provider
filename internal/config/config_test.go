@@ -118,6 +118,23 @@ func TestVPCNetworkingIsOffByDefault(t *testing.T) {
 	}
 }
 
+func TestShellReaperImageRequiresImmutableDigest(t *testing.T) {
+	for _, tc := range []struct {
+		image string
+		valid bool
+	}{
+		{"", true},
+		{"ghcr.io/datum-cloud/compute:latest", false},
+		{"ghcr.io/datum-cloud/compute@sha256:invalid", false},
+		{"ghcr.io/datum-cloud/compute@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true},
+	} {
+		cfg := DownstreamResourceManagementConfig{ShellReaperImage: tc.image}
+		if got := cfg.Validate() == nil; got != tc.valid {
+			t.Errorf("image %q valid = %t, want %t", tc.image, got, tc.valid)
+		}
+	}
+}
+
 // TestDefaults checks that a deployment supplying no config file still runs
 // against a named Kata handler rather than the cluster's default runtime, which
 // would silently give tenants a shared kernel.

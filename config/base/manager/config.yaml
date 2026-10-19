@@ -4,6 +4,10 @@ metricsServer:
   bindAddress: ":8080"
 webhookServer: {}
 downstreamResourceManagement:
+  # Set shellReaperImage to an immutable ghcr.io/datum-cloud/compute@sha256:...
+  # digest only during a planned rollout. The provider replaces existing Kata
+  # instance Pods once so their containers receive the process reaper helper.
+  # Until then, the compute shell agent refuses sessions without the helper.
   # The Kubernetes RuntimeClass instance Pods run under. kata-clh runs the guest
   # under Cloud Hypervisor, which reserves far less memory per instance than
   # QEMU and so raises how many instances a node holds. Which Kata hypervisor
