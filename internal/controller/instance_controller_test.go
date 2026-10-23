@@ -1061,6 +1061,38 @@ func TestReconcile_ReplacesPodWithoutGuestDADSysctls(t *testing.T) {
 	}
 }
 
+func TestReconcile_OptsInToShellReaperAndReplacesOldPod(t *testing.T) {
+	ctx := context.Background()
+	instance := newTestInstance()
+	cfg := &config.KataProvider{}
+	reconciler, fakeClient := newReconciler(t, cfg, instance)
+	if _, err := reconciler.Reconcile(ctx, instanceRequest()); err != nil {
+		t.Fatal(err)
+	}
+	oldPod, found := getPod(t, fakeClient)
+	if !found || len(oldPod.Spec.InitContainers) != 0 {
+		t.Fatal("expected a running Pod before the opt-in")
+	}
+	image := "ghcr.io/datum-cloud/compute@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	cfg.DownstreamResourceManagement.ShellReaperImage = image
+	if _, err := reconciler.Reconcile(ctx, instanceRequest()); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := getPod(t, fakeClient); found {
+		t.Fatal("old Pod must be replaced to mount the helper")
+	}
+	if _, err := reconciler.Reconcile(ctx, instanceRequest()); err != nil {
+		t.Fatal(err)
+	}
+	pod, found := getPod(t, fakeClient)
+	if !found || !hasShellReaper(pod.Spec, image) {
+		t.Fatalf("replacement Pod has no helper: %#v", pod)
+	}
+	if len(pod.Spec.Containers[0].VolumeMounts) != 1 || !pod.Spec.Containers[0].VolumeMounts[0].ReadOnly {
+		t.Fatal("helper mount must be read only in the application container")
+	}
+}
+
 // TestReconcile_ContainerCapabilities covers the promise that an instance runs
 // the confinement it states and nothing more. The class publishes what a
 // container gets when it states nothing, and compute stamps that onto the

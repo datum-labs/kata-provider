@@ -3,8 +3,8 @@ module go.datum.net/kata-provider
 go 1.26.4
 
 require (
-	go.datum.net/compute v0.12.10
-	go.datum.net/network-services-operator v0.27.0
+	go.datum.net/compute v0.12.12-0.20261019201524-aacfe940968c
+	go.datum.net/network-services-operator v0.32.26
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
 	k8s.io/client-go v0.36.1
