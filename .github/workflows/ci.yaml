@@ -103,4 +103,4 @@ jobs:
   # Every overlay has to be deployable, so this job renders each overlay on its
   # own.
   validate-kustomize:
-    uses: datum-cloud/actions/.github/workflows/validate-kustomize.yaml@v1.20.0
+    uses: datum-cloud/actions/.github/workflows/validate-kustomize.yaml@v1.26.0
