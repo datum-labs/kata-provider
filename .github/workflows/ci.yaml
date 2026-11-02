@@ -2,7 +2,6 @@ name: ci
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -16,7 +15,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  ci:
+    uses: datum-cloud/actions/.github/workflows/ci-basic.yaml@v1.26.0
+    with:
+      skip: docker
+
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -28,14 +32,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build
-        run: go build ./...
-
       - name: Vet
         run: go vet ./...
-
-      - name: Test
-        run: go test ./... -coverprofile cover.out
 
       # The generated ClusterRole is the provider's real permission set. A hand
       # edit to the ClusterRole disappears silently on the next regeneration,
