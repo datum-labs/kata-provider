@@ -2,6 +2,8 @@ module go.datum.net/kata-provider
 
 go 1.26.4
 
+toolchain go1.27.3
+
 require (
 	go.datum.net/compute v0.13.0
 	go.datum.net/network-services-operator v0.32.26
