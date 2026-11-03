@@ -14,6 +14,13 @@ docker build -t "${E2E_IMAGE}" "${REPO_ROOT}"
 log "loading ${E2E_IMAGE} into ${E2E_CLUSTER}"
 kind load docker-image "${E2E_IMAGE}" --name "${E2E_CLUSTER}"
 
+log "applying test/e2e/billing (Vector collector and mock billing gateway)"
+# The usage controller holds a deleted instance's Pod until its final usage
+# window is delivered, so the collector must be up before any suite runs.
+"${KUSTOMIZE}" build "${REPO_ROOT}/test/e2e/billing" | kctl apply --server-side -f - >/dev/null
+kctl -n billing-system rollout status deployment/billing-usage-collector-vector --timeout=5m
+kctl -n billing-system rollout status deployment/mock-billing-gateway --timeout=5m
+
 log "applying test/e2e/deploy with runtimeHandler ${E2E_RUNTIME_CLASS}"
 # The tier picks the hypervisor, so the provider has to be configured for the
 # handler the tier installed. Naming a handler that no RuntimeClass resolves to
@@ -22,6 +29,9 @@ log "applying test/e2e/deploy with runtimeHandler ${E2E_RUNTIME_CLASS}"
 # the shipped config names, so the environment does not depend on that value.
 "${KUSTOMIZE}" build "${REPO_ROOT}/test/e2e/deploy" |
 	sed -E "s|runtimeHandler: [a-z0-9-]+|runtimeHandler: ${E2E_RUNTIME_CLASS}|" |
+	# A short reporting grid lets the usage-metering suite observe several
+	# periodic flushes in under a minute.
+	sed -E "s|flushInterval: [0-9a-z]+|flushInterval: 20s|" |
 	kctl apply --server-side -f - >/dev/null
 
 # A new image under an unchanged tag does not restart the Deployment on its own.

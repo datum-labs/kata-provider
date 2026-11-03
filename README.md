@@ -193,6 +193,44 @@ The cell overlay ships its `VMRule`. Infra must scrape that kubelet endpoint
 and select rules from the Kata provider namespace before the rule publishes
 samples. Customer metrics expose the container name as `instance_container`.
 
+## Usage metering
+
+The usage controller bills each instance for the time its containers actually
+run, at the instance size held in the container limits (not the overcommitted
+requests). Each window becomes two billing CloudEvents,
+`compute.datumapis.com/instance/milli-cpu-seconds` (millicore-seconds) and
+`compute.datumapis.com/instance/memory-seconds` (byte-seconds), tagged
+`runtime_class=general-purpose` and attributed to the project decoded from
+the Namespace's `meta.datumapis.com/upstream-cluster-name` label. The
+controller sends them to the node-local billing collector set in
+`usageMetering.endpoint`.
+
+- **Deterministic windows.** Running time is reported on a wall-clock grid of
+  `usageMetering.flushInterval` (5m by default). A final window ends at the
+  container's `FinishedAt`, or at the Pod's `DeletionTimestamp` when a lost
+  node never reports one. Every event id is derived from (Pod UID, meter,
+  window), so a retry, a conflict, a stale read or a leader change resends
+  identical events, which the gateway deduplicates.
+- **State on the Pod.** The `kata.datumapis.com/usage-reported-until`
+  annotation is the watermark. The `kata.datumapis.com/usage-finalizer`
+  finalizer holds a deleted Pod until its guest has stopped and its last
+  window is delivered. After `usageMetering.emitGiveUp` (30m) past the
+  deletion, undeliverable usage is dropped so a collector outage cannot block
+  deletions indefinitely.
+- **Only running time.** Time spent pending, suspended, or waiting in
+  CrashLoopBackOff is not billed. A Pod first seen long after it started
+  (such as Pods already running when metering is rolled out) is billed from
+  at most `usageMetering.maxBackfill` (15m) ago.
+- **Loud drops.** Usage that is not billed, because the Namespace has no
+  project label, the Pod has no size, or delivery gave up, is logged as an
+  error, recorded as a Warning Event on the Pod (`UsageUnattributable`,
+  `UsageUnsized`, `UsageDropped`) and counted in
+  `kata_provider_usage_windows_dropped_total{reason}`.
+
+Operating it (alerts, stuck Pods, collector outages, removing the finalizer,
+decommissioning a cell) is covered in the
+[usage metering runbook](docs/runbooks/usage-metering.md).
+
 ## Installing the runtime-rs shim on Talos
 
 Talos takes its container runtimes from the machine image, and the Kata system

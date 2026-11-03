@@ -228,6 +228,12 @@ func (r *InstanceReconciler) handleDeletion(ctx context.Context, instance *compu
 
 	controllerutil.RemoveFinalizer(instance, instanceFinalizer)
 	if err := r.Update(ctx, instance); err != nil {
+		// A reconcile queued by the Pod's final removal can read the Instance
+		// from the cache after an earlier reconcile has already released the
+		// finalizer and the Instance has left etcd. Nothing is left to do.
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from instance %s: %w", instance.Name, err)
 	}
 	logger.Info("instance stopped; finalizer released", "instance", instance.Name)

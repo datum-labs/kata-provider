@@ -1,0 +1,72 @@
+# A stand-in for the API-keyed billing gateway. It acknowledges every request
+# and prints each request body on its own log line, so the usage-metering
+# suite can assert on exactly what Vector shipped.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-billing-gateway
+spec:
+  selector:
+    app: mock-billing-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-billing-gateway
+  labels:
+    app: mock-billing-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-billing-gateway
+  template:
+    metadata:
+      labels:
+        app: mock-billing-gateway
+    spec:
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: mock-billing-gateway
+          image: python:3.11-alpine
+          command:
+            - python
+            - -u
+            - -c
+            - |
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              class Handler(BaseHTTPRequestHandler):
+                  def do_POST(self):
+                      body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
+                      # One request body per line; the suite parses these.
+                      print(body.decode('utf-8', errors='replace').replace('\n', ' '), flush=True)
+                      self.send_response(200)
+                      self.send_header('Content-Length', '0')
+                      self.end_headers()
+
+                  def log_message(self, *args):
+                      pass
+
+              print('mock-billing-gateway listening', flush=True)
+              ThreadingHTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
