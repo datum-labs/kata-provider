@@ -26,6 +26,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	computev1alpha "go.datum.net/compute/api/v1alpha"
+	"go.miloapis.com/billing/emission"
+	prometheusexporter "go.opentelemetry.io/otel/exporters/prometheus"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"go.datum.net/kata-provider/internal/config"
 	"go.datum.net/kata-provider/internal/controller"
@@ -131,6 +135,41 @@ func main() {
 		MemoryRequestPercent: memoryRequestPercent,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "InstanceReconciler")
+		os.Exit(1)
+	}
+
+	promExporter, err := prometheusexporter.New(
+		prometheusexporter.WithRegisterer(ctrlmetrics.Registry),
+	)
+	if err != nil {
+		setupLog.Error(err, "unable to create prometheus exporter for usage metrics")
+		os.Exit(1)
+	}
+	meterProvider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(promExporter))
+	defer func() {
+		_ = meterProvider.Shutdown(ctx)
+	}()
+
+	recorderOpts := []emission.Option{
+		emission.WithMeterProvider(meterProvider),
+	}
+	if serverConfig.UsageMetering.Endpoint != "" {
+		recorderOpts = append(recorderOpts, emission.WithEndpoint(serverConfig.UsageMetering.Endpoint))
+	}
+	usageRecorder, err := emission.NewUsageRecorder(recorderOpts...)
+	if err != nil {
+		setupLog.Error(err, "unable to create usage recorder")
+		os.Exit(1)
+	}
+
+	if err = (&controller.UsageReconciler{
+		Recorder:         usageRecorder,
+		FlushInterval:    serverConfig.UsageMetering.FlushInterval.Duration,
+		MaxBackfill:      serverConfig.UsageMetering.MaxBackfill.Duration,
+		TerminationGrace: serverConfig.UsageMetering.TerminationGrace.Duration,
+		EmitGiveUp:       serverConfig.UsageMetering.EmitGiveUp.Duration,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UsageReconciler")
 		os.Exit(1)
 	}
 

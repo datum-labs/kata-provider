@@ -18,6 +18,7 @@ spec:
       labels:
         control-plane: kata-provider
         app.kubernetes.io/name: kata-provider
+        billing.miloapis.com/emits-usage: "true"
     spec:
       securityContext:
         runAsNonRoot: true

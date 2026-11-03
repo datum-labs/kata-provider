@@ -1,0 +1,161 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: usage-metering
+  labels:
+    tier: portable
+spec:
+  description: |
+    Proves that an instance's running time reaches the billing pipeline as
+    billing CloudEvents, attributed to the project that owns it.
+
+    The usage controller reports a running instance on a wall-clock aligned
+    grid (shortened to 20s by the end-to-end deployment) and closes the last
+    window when the instance stops. Each window becomes two CloudEvents, one in
+    millicore-seconds and one in byte-seconds, tagged with the general-purpose
+    runtime class, which Vector forwards to the (mock) billing gateway.
+
+    The project is the decoded upstream-cluster-name label of the Namespace,
+    never the Namespace's own name, which is a synthetic edge-local identifier.
+
+  template: true
+
+  bindings:
+    - name: project
+      value: e2e-usage-project
+
+  steps:
+    - name: label-namespace
+      description: Stamp the namespace the way federation does.
+      try:
+        - script:
+            env:
+              - name: PROJECT
+                value: ($project)
+            content: |
+              kubectl label namespace "$NAMESPACE" --overwrite \
+                "meta.datumapis.com/upstream-cluster-name=cluster-${PROJECT}"
+
+    - name: create-instance
+      try:
+        - apply:
+            file: instance.yaml
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: metered
+                finalizers:
+                  - kata.datumapis.com/usage-finalizer
+              status:
+                phase: Running
+
+    - name: assert-tracking-started
+      description: |
+        The watermark is persisted on the Pod before anything is billed, so a
+        controller restart resumes where it left off.
+      try:
+        - script:
+            content: |
+              for _ in $(seq 1 30); do
+                w=$(kubectl -n "$NAMESPACE" get pod metered \
+                  -o jsonpath='{.metadata.annotations.kata\.datumapis\.com/usage-reported-until}')
+                [ -n "$w" ] && { echo "watermark $w"; exit 0; }
+                sleep 2
+              done
+              echo "FAIL: no usage watermark on the pod" >&2
+              exit 1
+
+    - name: run-across-several-flushes
+      description: Let the instance run across at least two grid boundaries.
+      try:
+        - sleep:
+            duration: 50s
+
+    - name: delete-instance
+      try:
+        - script:
+            content: |
+              # The final window ends when the container stops, which is after
+              # this. The assertion below waits until a window ends this late.
+              date -u +%s > "${TMPDIR:-/tmp}/usage-metering-${NAMESPACE}.deleted"
+              kubectl -n "$NAMESPACE" delete instance metered --wait=false
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: metered
+
+    - name: assert-usage-billed
+      description: |
+        The mock gateway received, for this instance, CPU and memory events for
+        several windows: attributed to the project, tagged with the runtime
+        class, contiguous, and with one unique id per meter and window.
+      try:
+        - script:
+            timeout: 120s
+            env:
+              - name: PROJECT
+                value: ($project)
+            content: |
+              DELETED_AT=$(cat "${TMPDIR:-/tmp}/usage-metering-${NAMESPACE}.deleted")
+              for _ in $(seq 1 40); do
+                LOGS=$(kubectl -n billing-system logs deploy/mock-billing-gateway --tail=-1 2>/dev/null || true)
+                if printf '%s' "$LOGS" | python3 -I -c '
+              import json, sys
+              from datetime import datetime
+              project, namespace, deleted_at = sys.argv[1], sys.argv[2], int(sys.argv[3])
+              def epoch(e):
+                  return int(datetime.fromisoformat(e["time"].replace("Z", "+00:00")).timestamp())
+              events = []
+              for line in sys.stdin:
+                  line = line.strip()
+                  if not line.startswith(("[", "{")):
+                      continue
+                  try:
+                      body = json.loads(line)
+                  except ValueError:
+                      continue
+                  events.extend(body if isinstance(body, list) else [body])
+              mine = [e for e in events
+                      if (e.get("data") or {}).get("resource", {}).get("name") == "metered"
+                      and (e.get("data") or {}).get("resource", {}).get("namespace") == namespace]
+              if not mine:
+                  sys.exit(1)
+              # Retried deliveries reuse the id; the gateway deduplicates on it.
+              unique = {e["id"]: e for e in mine}.values()
+              cpu = [e for e in unique if e["type"] == "compute.datumapis.com/instance/milli-cpu-seconds"]
+              mem = [e for e in unique if e["type"] == "compute.datumapis.com/instance/memory-seconds"]
+              for e in cpu + mem:
+                  assert e["subject"] == "projects/" + project, e
+                  assert e["source"] == "//compute.datumapis.com/instance", e
+                  assert e["data"]["dimensions"] == {"runtime_class": "general-purpose"}, e
+                  assert e["data"]["resource"]["kind"] == "Instance", e
+                  assert int(e["data"]["value"]) > 0, e
+              # Two grid flushes plus the final window, one CPU and one memory
+              # event each.
+              if len(cpu) < 3 or len(mem) != len(cpu):
+                  sys.exit(1)
+              # The final window, closed at the container FinishedAt after
+              # the deletion, has arrived (Vector batches for up to 1s).
+              if max(epoch(e) for e in cpu) < deleted_at:
+                  sys.exit(1)
+              # Every window is sized the same.
+              ratios = [int(m["data"]["value"]) / int(c["data"]["value"])
+                        for c, m in zip(sorted(cpu, key=lambda e: e["time"]), sorted(mem, key=lambda e: e["time"]))]
+              assert max(ratios) / min(ratios) < 1.001, ratios
+              # Show what the gateway received; chainsaw prints the step output.
+              print("received %d CloudEvents for instance metered:" % len(unique))
+              for e in sorted(unique, key=lambda e: (e["time"], e["type"])):
+                  print(json.dumps(e, indent=2, sort_keys=True))
+              print("billed %d windows for project %s" % (len(cpu), project))
+              ' "$PROJECT" "$NAMESPACE" "$DELETED_AT"; then
+                  exit 0
+                fi
+                sleep 3
+              done
+              echo "FAIL: the mock billing gateway did not receive the expected usage events" >&2
+              kubectl -n billing-system logs deploy/mock-billing-gateway --tail=50 >&2 || true
+              exit 1
