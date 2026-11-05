@@ -1,22 +1,19 @@
 module go.datum.net/kata-provider
 
-go 1.26.4
+go 1.27.0
 
 toolchain go1.27.3
 
 require (
 	go.datum.net/compute v0.14.3
 	go.datum.net/network-services-operator v0.34.1
+	go.opentelemetry.io/proto/otlp v1.11.1
+	google.golang.org/grpc v1.85.0
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
 	k8s.io/client-go v0.37.1
 	k8s.io/utils v0.0.0-20261023123148-ca04ba58ecab
 	sigs.k8s.io/controller-runtime v0.25.2
-)
-
-require (
-	go.opentelemetry.io/proto/otlp v1.11.1
-	google.golang.org/grpc v1.85.0
 	sigs.k8s.io/yaml v1.6.0
 )
 
