@@ -2,7 +2,7 @@ module go.datum.net/kata-provider
 
 go 1.27.0
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 require (
 	go.datum.net/compute v0.14.3
