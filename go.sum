@@ -93,8 +93,8 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
-github.com/klauspost/compress v1.20.1 h1:T7kKElXUMXrUJ2E9QhQhxFtcK5rPyLdsGZvdbLMPdiQ=
-github.com/klauspost/compress v1.20.1/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
+github.com/klauspost/compress v1.20.2 h1:v5tiZvm1KGLyg5d5oXdXe3lsSPrbEUiKoXGia//I7Qo=
+github.com/klauspost/compress v1.20.2/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
@@ -134,8 +134,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
-go.datum.net/compute v0.14.3 h1:LsrGkZ1trFVIfJp2E7H2FccL7+gQ8oLJHYxqFT1tI1k=
-go.datum.net/compute v0.14.3/go.mod h1:VmuFMtZ3/nk4BvfKeU3fBHQIXUikHDQtwkZzLIxVdJA=
+go.datum.net/compute v0.16.1 h1:qDASl/MseVclutjvkkOlo8khW0j5rAoOshvsWeAJAU4=
+go.datum.net/compute v0.16.1/go.mod h1:+Gae2TbsIXNCRKBoALgODEzxZPk6Wi/nyHZ5h1hgCTw=
 go.datum.net/network-services-operator v0.34.1 h1:7ca9zcWZsRqqLKewflzG0UG8IGLmRngoOEyQ8fhHMtY=
 go.datum.net/network-services-operator v0.34.1/go.mod h1:mJcEFBgqa6mXz54kYv8EQaVUNR7zUXfIz5X1zbxTdIw=
 go.miloapis.com/locations v0.0.1 h1:voJKqBzyLX5x96M3+5y/ga7fgq9/+vypTizd+bBvqUY=
