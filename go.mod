@@ -5,7 +5,7 @@ go 1.27.0
 toolchain go1.27.4
 
 require (
-	go.datum.net/compute v0.14.3
+	go.datum.net/compute v0.16.1
 	go.datum.net/network-services-operator v0.34.1
 	go.opentelemetry.io/proto/otlp v1.11.1
 	google.golang.org/grpc v1.85.0
