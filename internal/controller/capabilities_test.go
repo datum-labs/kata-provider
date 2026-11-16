@@ -38,6 +38,7 @@ func TestCapabilities(t *testing.T) {
 		{runtimeclass.FeatureContainerCapabilities, true, "a capability acts inside the guest kernel, not on the host"},
 		{runtimeclass.FeatureSandboxSysctls, true, "the kubelet applies an exact allowlist inside the guest network namespace"},
 		{runtimeclass.FeatureExec, true, "the kubelet's exec reaches into the guest through the Kata agent"},
+		{runtimeclass.FeatureExecTerminal, true, "the container runtime allocates a pseudo-terminal for the exec"},
 		{runtimeclass.FeatureVirtualMachineRuntime, false, "the guest kernel and image are platform-owned"},
 		{runtimeclass.FeatureDiskVolumes, false, "no cell serving this class runs a storage integration yet"},
 		{runtimeclass.FeatureDeviceVolumeAttachments, false, "a raw device attachment presupposes a disk"},

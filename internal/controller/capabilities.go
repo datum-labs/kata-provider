@@ -63,6 +63,10 @@ var Capabilities = runtimeclass.Capabilities{
 		// it, which is how the cell's shell agent finds it.
 		runtimeclass.FeatureExec,
 
+		// The container runtime allocates a pseudo-terminal for an exec that
+		// asks for one, and Kata carries it into the guest.
+		runtimeclass.FeatureExecTerminal,
+
 		// The kubelet's stop timeout reaches the Kata agent, which sends
 		// SIGTERM to the container process inside the guest and kills it once
 		// the Pod's grace period ends.
