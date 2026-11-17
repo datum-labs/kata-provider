@@ -1,0 +1,122 @@
+# The billing usage collector, as the platform deploys it
+# (go.miloapis.com/billing config/components/billing-usage-collector): an
+# http_server source the billing SDK POSTs CloudEvents to, a transform that
+# strips the fields Vector adds, and an http sink to the gateway's batch
+# ingest endpoint. Only the sink's target differs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-usage-collector-vector
+data:
+  vector.yaml: |
+    data_dir: "/vector-data-dir"
+    sources:
+      billing_sdk:
+        type: http_server
+        address: "0.0.0.0:9880"
+        path: "/cloudevents"
+        decoding:
+          codec: json
+    transforms:
+      clean_cloudevents:
+        type: remap
+        inputs:
+          - billing_sdk
+        source: |
+          del(.timestamp)
+          del(.host)
+          del(.source_type)
+          del(.path)
+    sinks:
+      billing_gateway:
+        type: http
+        inputs:
+          - clean_cloudevents
+        uri: "http://mock-billing-gateway.billing-system.svc.cluster.local:8080/v1/usage/events:batchIngest"
+        method: post
+        encoding:
+          codec: json
+        batch:
+          max_events: 100
+          timeout_secs: 1
+        buffer:
+          type: memory
+          when_full: block
+        request:
+          retry_policy:
+            max_retries: 30
+            initial_backoff_secs: 1
+            max_backoff_secs: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-usage-collector-vector
+  labels:
+    app.kubernetes.io/name: vector
+    app.kubernetes.io/instance: billing-usage-collector
+spec:
+  selector:
+    app.kubernetes.io/name: vector
+    app.kubernetes.io/instance: billing-usage-collector
+  ports:
+    - name: cloudevents
+      port: 9880
+      targetPort: 9880
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-usage-collector-vector
+  labels:
+    app.kubernetes.io/name: vector
+    app.kubernetes.io/instance: billing-usage-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vector
+      app.kubernetes.io/instance: billing-usage-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vector
+        app.kubernetes.io/instance: billing-usage-collector
+    spec:
+      # A single-node Kind cluster runs everything on the control-plane node.
+      tolerations:
+        - operator: Exists
+      volumes:
+        - name: config
+          configMap:
+            name: billing-usage-collector-vector
+        - name: data
+          emptyDir: {}
+      containers:
+        - name: vector
+          # The tag the platform's collector pins.
+          image: timberio/vector:0.55.0-alpine
+          args:
+            - --config-dir
+            - /etc/vector
+          ports:
+            - name: cloudevents
+              containerPort: 9880
+          readinessProbe:
+            tcpSocket:
+              port: 9880
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vector
+              readOnly: true
+            - name: data
+              mountPath: /vector-data-dir
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false

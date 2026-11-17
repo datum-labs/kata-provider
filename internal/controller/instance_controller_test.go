@@ -709,6 +709,28 @@ func TestReconcile_FinalizerIsClaimScoped(t *testing.T) {
 	}
 }
 
+// TestReconcile_TeardownAlreadyFinalizedIsNotAnError covers a reconcile that
+// reads a stale cached Instance after another reconcile already released the
+// finalizer: the Instance is gone from the API, so the update finds nothing.
+func TestReconcile_TeardownAlreadyFinalizedIsNotAnError(t *testing.T) {
+	deleting := newTestInstance(func(i *computev1alpha.Instance) {
+		i.Finalizers = []string{instanceFinalizer}
+		i.DeletionTimestamp = &metav1.Time{Time: metav1.Now().Time}
+	})
+	reconciler, _ := newInterceptedReconciler(t, nil, interceptor.Funcs{
+		Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			if _, ok := obj.(*computev1alpha.Instance); ok {
+				return apierrors.NewNotFound(computev1alpha.GroupVersion.WithResource("instances").GroupResource(), obj.GetName())
+			}
+			return c.Update(ctx, obj, opts...)
+		},
+	}, deleting)
+
+	if _, err := reconciler.Reconcile(context.Background(), instanceRequest()); err != nil {
+		t.Fatalf("expected a vanished instance to finish teardown cleanly, got %v", err)
+	}
+}
+
 // TestReconcile_TeardownOrdering checks that the provider does not report an
 // instance gone while its guest is still shutting down. Releasing the finalizer
 // early would tell the workload above the instance that capacity, addresses,

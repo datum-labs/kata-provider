@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	core "k8s.io/api/core/v1"
 
@@ -16,6 +17,8 @@ import (
 // defaultRuntimeHandler is the handler the shipped configuration and the type
 // defaults both name.
 const defaultRuntimeHandler = "kata-clh"
+
+const defaultUsageMeteringEndpoint = "http://billing-usage-collector-vector.billing-system.svc.cluster.local:9880/cloudevents"
 
 // TestDecodeShippedConfig decodes the config file the deployment mounts, with
 // the same strict decoder the manager uses. A setting that the shipped config
@@ -147,6 +150,45 @@ func TestDefaults(t *testing.T) {
 	}
 	if got := config.MetricsServer.BindAddress; got == "" {
 		t.Error("expected a default metrics bind address")
+	}
+	if got := config.UsageMetering.Endpoint; got != defaultUsageMeteringEndpoint {
+		t.Errorf("usageMetering.endpoint = %q, want %q", got, defaultUsageMeteringEndpoint)
+	}
+}
+
+func TestExplicitUsageMeteringEndpointSurvivesDefaulting(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add config scheme: %v", err)
+	}
+	if err := RegisterDefaults(scheme); err != nil {
+		t.Fatalf("failed to register defaults: %v", err)
+	}
+	codecs := serializer.NewCodecFactory(scheme, serializer.EnableStrict)
+
+	const customEndpoint = "http://localhost:9880/cloudevents"
+	data := []byte(`apiVersion: apiserver.config.datumapis.com/v1alpha1
+kind: KataProvider
+usageMetering:
+  endpoint: ` + customEndpoint + `
+  flushInterval: 1m
+  maxBackfill: 1h
+  terminationGrace: 90s
+  emitGiveUp: 45m
+`)
+
+	var config KataProvider
+	if err := runtime.DecodeInto(codecs.UniversalDecoder(), data, &config); err != nil {
+		t.Fatalf("failed to decode the config: %v", err)
+	}
+
+	if got := config.UsageMetering.Endpoint; got != customEndpoint {
+		t.Errorf("usageMetering.endpoint = %q, want %q", got, customEndpoint)
+	}
+	m := config.UsageMetering
+	if m.FlushInterval.Duration != time.Minute || m.MaxBackfill.Duration != time.Hour ||
+		m.TerminationGrace.Duration != 90*time.Second || m.EmitGiveUp.Duration != 45*time.Minute {
+		t.Errorf("usageMetering durations = %+v", m)
 	}
 }
 

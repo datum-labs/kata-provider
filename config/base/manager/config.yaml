@@ -3,6 +3,13 @@ kind: KataProvider
 metricsServer:
   bindAddress: ":8080"
 webhookServer: {}
+usageMetering:
+  # The node-local billing collector (Vector agent DaemonSet, Service with
+  # internalTrafficPolicy: Local) that forwards usage CloudEvents to the
+  # billing gateway.
+  endpoint: "http://billing-usage-collector-vector.billing-system.svc.cluster.local:9880/cloudevents"
+  # Running usage is reported on a wall-clock aligned grid of this width.
+  flushInterval: 5m
 downstreamResourceManagement:
   # Set shellReaperImage to an immutable ghcr.io/datum-cloud/compute@sha256:...
   # digest only during a planned rollout. The provider replaces existing Kata

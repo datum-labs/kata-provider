@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The billing leg of the end-to-end environment:
+#
+#   usage controller ──CloudEvents──▶ Vector (:9880/cloudevents) ──▶ mock gateway
+#
+# In a cell, the platform's billing-usage-collector Vector agent (a DaemonSet
+# from go.miloapis.com/billing, config/components/billing-usage-collector)
+# receives the provider's CloudEvents and forwards them to the API-keyed
+# billing gateway. That chain cannot run in a hermetic Kind cluster, so this
+# reproduces its Vector program and swaps only the sink for a mock gateway that
+# logs every request body for the usage-metering suite to assert on.
+#
+# The Service carries the production name, so the provider's default
+# usageMetering.endpoint resolves here unchanged.
+namespace: billing-system
+
+resources:
+  - namespace.yaml
+  - vector.yaml
+  - mock-billing-gateway.yaml

@@ -27,4 +27,7 @@ func SetObjectDefaults_KataProvider(in *KataProvider) {
 	if in.DownstreamResourceManagement.RuntimeHandler == "" {
 		in.DownstreamResourceManagement.RuntimeHandler = "kata-clh"
 	}
+	if in.UsageMetering.Endpoint == "" {
+		in.UsageMetering.Endpoint = "http://billing-usage-collector-vector.billing-system.svc.cluster.local:9880/cloudevents"
+	}
 }

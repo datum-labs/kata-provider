@@ -30,6 +30,51 @@ type KataProvider struct {
 	WebhookServer WebhookServerConfig `json:"webhookServer"`
 
 	DownstreamResourceManagement DownstreamResourceManagementConfig `json:"downstreamResourceManagement"`
+
+	UsageMetering UsageMeteringConfig `json:"usageMetering"`
+}
+
+// +k8s:deepcopy-gen=true
+
+// UsageMeteringConfig configures how the provider emits compute usage events
+// to the billing pipeline.
+type UsageMeteringConfig struct {
+	// Endpoint is the HTTP URL of the Vector usage collector receiving
+	// CloudEvents.
+	//
+	// +optional
+	// +default="http://billing-usage-collector-vector.billing-system.svc.cluster.local:9880/cloudevents"
+	Endpoint string `json:"endpoint,omitempty"`
+
+	// FlushInterval is the width of the wall-clock aligned grid that running
+	// usage is reported on. Each running instance costs one Pod patch per
+	// interval. Defaults to 5m.
+	//
+	// +optional
+	FlushInterval metav1.Duration `json:"flushInterval,omitempty"`
+
+	// MaxBackfill caps how far in the past the first usage window of a Pod
+	// the provider never tracked may start, such as the Pods already running
+	// when metering is rolled out. Defaults to 15m.
+	//
+	// +optional
+	MaxBackfill metav1.Duration `json:"maxBackfill,omitempty"`
+
+	// TerminationGrace is how long past a deleted Pod's DeletionTimestamp the
+	// provider waits for the kubelet to report its containers terminated
+	// before it closes the final window at the DeletionTimestamp. Defaults to
+	// 2m.
+	//
+	// +optional
+	TerminationGrace metav1.Duration `json:"terminationGrace,omitempty"`
+
+	// EmitGiveUp is how long past a deleted Pod's DeletionTimestamp the
+	// provider keeps retrying undeliverable usage before it drops the usage
+	// and lets the Pod go, so a collector outage cannot block deletions
+	// forever. Defaults to 30m.
+	//
+	// +optional
+	EmitGiveUp metav1.Duration `json:"emitGiveUp,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
