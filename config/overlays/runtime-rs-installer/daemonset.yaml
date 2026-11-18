@@ -45,29 +45,47 @@ spec:
             - |
               SHIM_DIR=/host/opt/containerd/bin
               CONF_DIR=/host/opt/kata/share/defaults/kata-containers/runtime-rs
+              ASSET_DIR=/host/opt/kata/runtime-rs
 
-              # Each artifact is written under a temporary name on its
-              # destination filesystem and renamed into place, so containerd
-              # never sees a half-written shim.
-              cp /artifacts/containerd-shim-katars-v2 "${SHIM_DIR}/.shim.tmp"
-              chmod 0755 "${SHIM_DIR}/.shim.tmp"
+              # Copies one artifact from the image to the node. Each is written
+              # under a temporary name on its destination filesystem, checked,
+              # and renamed into place, so nothing ever sees a half-written
+              # file. One already in place and intact is left alone, which
+              # keeps a reboot from rewriting the guest image.
+              place() {
+                name=$1 dest=$2 mode=$3
+                expected=$(awk -v f="${name}" '$2 == f { print $1 }' /artifacts/SHA256SUMS)
+                if [ -f "${dest}" ] && [ "$(sha256sum < "${dest}" | cut -d' ' -f1)" = "${expected}" ]; then
+                  return 0
+                fi
+                tmp="$(dirname "${dest}")/.$(basename "${dest}").tmp"
+                cp "/artifacts/${name}" "${tmp}"
+                chmod "${mode}" "${tmp}"
+                actual=$(sha256sum < "${tmp}" | cut -d' ' -f1)
+                if [ "${expected}" != "${actual}" ]; then
+                  echo "${name} checksum mismatch: want ${expected}, got ${actual}" >&2
+                  rm -f "${tmp}"
+                  exit 1
+                fi
+                mv -f "${tmp}" "${dest}"
+              }
 
-              # Confirms the copy landed intact before anything can execute it.
-              expected=$(cut -d' ' -f1 /artifacts/containerd-shim-katars-v2.sha256)
-              actual=$(sha256sum < "${SHIM_DIR}/.shim.tmp" | cut -d' ' -f1)
-              if [ "${expected}" != "${actual}" ]; then
-                echo "shim checksum mismatch: want ${expected}, got ${actual}" >&2
-                rm -f "${SHIM_DIR}/.shim.tmp"
-                exit 1
-              fi
-              mv -f "${SHIM_DIR}/.shim.tmp" "${SHIM_DIR}/containerd-shim-katars-v2"
+              # The hypervisor and guest files go in before the shim, so a
+              # shim that containerd can find always has them to launch.
+              mkdir -p "${ASSET_DIR}/bin" "${ASSET_DIR}/share"
+              place runtime-rs/bin/cloud-hypervisor "${ASSET_DIR}/bin/cloud-hypervisor" 0755
+              place runtime-rs/share/vmlinux.container "${ASSET_DIR}/share/vmlinux.container" 0644
+              place runtime-rs/share/kata-containers.img "${ASSET_DIR}/share/kata-containers.img" 0644
+              place containerd-shim-katars-v2 "${SHIM_DIR}/containerd-shim-katars-v2" 0755
 
               cp /config/configuration.toml "${CONF_DIR}/.configuration.toml.tmp"
               chmod 0644 "${CONF_DIR}/.configuration.toml.tmp"
               mv -f "${CONF_DIR}/.configuration.toml.tmp" "${CONF_DIR}/configuration.toml"
 
-              echo "placed the runtime-rs shim and its configuration:"
-              ls -l "${SHIM_DIR}/containerd-shim-katars-v2" "${CONF_DIR}/configuration.toml"
+              echo "placed the runtime-rs shim, its hypervisor and guest files, and its configuration:"
+              ls -l "${SHIM_DIR}/containerd-shim-katars-v2" "${CONF_DIR}/configuration.toml" \
+                "${ASSET_DIR}/bin/cloud-hypervisor" "${ASSET_DIR}/share/vmlinux.container" \
+                "${ASSET_DIR}/share/kata-containers.img"
           resources:
             requests:
               cpu: "10m"
@@ -83,6 +101,8 @@ spec:
               mountPath: /host/opt/containerd/bin
             - name: kata-defaults
               mountPath: /host/opt/kata/share/defaults/kata-containers/runtime-rs
+            - name: kata-assets
+              mountPath: /host/opt/kata/runtime-rs
             - name: config
               mountPath: /config
       containers:
@@ -108,6 +128,13 @@ spec:
             # The shim's own search order. Nothing on a Talos node ships this
             # tree, so the installer owns it.
             path: /opt/kata/share/defaults/kata-containers/runtime-rs
+            type: DirectoryOrCreate
+        - name: kata-assets
+          hostPath:
+            # The hypervisor and guest files the shim launches. Kept apart from
+            # the /usr/local copies the Talos extension ships, which follow the
+            # Talos release instead of the shim's.
+            path: /opt/kata/runtime-rs
             type: DirectoryOrCreate
         - name: config
           configMap:
