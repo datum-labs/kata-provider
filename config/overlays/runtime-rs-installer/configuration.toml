@@ -16,12 +16,14 @@
 # XXX:   Type: kata
 
 [hypervisor.clh]
-# Datum: the Talos kata-containers system extension installs the virtual
-# machine monitor, the guest kernel, the guest image and virtiofsd under
-# /usr/local, not the /opt/kata prefix the upstream defaults assume.
-path = "/usr/local/bin/cloud-hypervisor"
-kernel = "/usr/local/share/kata-containers/vmlinux.container"
-image = "/usr/local/share/kata-containers/kata-containers.img"
+# Datum: the installer places the virtual machine monitor, the guest kernel
+# and the guest image from this Kata release under /opt/kata/runtime-rs. The
+# Talos kata-containers system extension ships its own under /usr/local, but
+# those follow the Talos release, and a newer Cloud Hypervisor rejects the VM
+# configuration this shim sends. virtiofsd still comes from the extension.
+path = "/opt/kata/runtime-rs/bin/cloud-hypervisor"
+kernel = "/opt/kata/runtime-rs/share/vmlinux.container"
+image = "/opt/kata/runtime-rs/share/kata-containers.img"
 
 # rootfs filesystem type:
 #   - ext4 (default)
@@ -48,7 +50,7 @@ enable_annotations = ["enable_iommu", "kernel_params", "kernel_verity_params", "
 # Each member of the list is a path pattern as described by glob(3).
 # The default if not set is empty (all annotations rejected.)
 # Your distribution recommends: ["/opt/kata/bin/cloud-hypervisor"]
-valid_hypervisor_paths = ["/usr/local/bin/cloud-hypervisor"]
+valid_hypervisor_paths = ["/opt/kata/runtime-rs/bin/cloud-hypervisor"]
 
 # List of valid annotations values for ctlpath
 # The default if not set is empty (all annotations rejected.)

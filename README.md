@@ -241,6 +241,13 @@ is fetched at boot. The shim is installed under a distinct name and reads its
 own configuration, so the Go shim the extension provides keeps working
 untouched.
 
+The image also carries the Cloud Hypervisor binary, guest kernel and guest
+image from the shim's Kata release, and the installer places them under
+`/opt/kata/runtime-rs`. The extension ships its own copies under `/usr/local`,
+but those move with the Talos release, and a Cloud Hypervisor newer than the
+shim rejects the VM configuration the shim sends. Only virtiofsd still comes
+from the extension.
+
 The overlay is independent of the provider overlays: it targets nodes rather
 than the control plane, needs a namespace that admits privileged pods, and only
 belongs on a cell whose machine image carries the Kata extension.
