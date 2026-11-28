@@ -15,6 +15,12 @@ metadata:
     app.kubernetes.io/name: kata-provider
     app.kubernetes.io/managed-by: kustomize
 handler: katars
+# Covers the runtime-rs installer's default_memory plus the host-side
+# processes. The README section on the installer gives the rule. CPU overhead
+# is left to the deployer.
+overhead:
+  podFixed:
+    memory: "320Mi"
 scheduling:
   nodeSelector:
     katacontainers.io/kata-runtime: "true"

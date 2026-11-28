@@ -97,7 +97,19 @@ default_maxvcpus = 0
 
 # Default memory size in MiB for SB/VM.
 # If unspecified then it will be set 2048 MiB.
-default_memory = 2048
+# Datum: with static_sandbox_resource_mgmt, this shim sizes the VM as this
+# value plus the Pod's memory limits, so this value is the guest's own room for
+# its kernel, the agent and their caches. The provider always sets a memory
+# limit, so no instance runs on this value alone.
+#
+# Guest RAM is shared memory on the host. Every page the guest touches stays
+# charged to the Pod's host cgroup, whose limit is the same Pod limits plus the
+# katars RuntimeClass podFixed overhead. This value, plus the shim, virtiofsd,
+# Cloud Hypervisor and their kernel memory, must fit inside podFixed. If it
+# does not, the host OOM killer stops Cloud Hypervisor and the whole instance
+# dies before the guest's own OOM killer can stop one process. The deploying
+# platform sets podFixed, so change the two together.
+default_memory = 192
 
 # Shared file system type:
 #   - virtio-fs

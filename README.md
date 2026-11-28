@@ -265,6 +265,23 @@ register a runtime handler that names it, which on Talos is a machine
 configuration change and a node reboot, and a `RuntimeClass` has to point at
 that handler. Until both exist the installed files are inert.
 
+That `RuntimeClass` also has to reserve memory for the VM. The shim sizes each
+VM as the Pod's memory limits plus `default_memory`, 192 MiB of room for the
+guest kernel and agent. Guest RAM is shared memory on the host, so every page
+the guest touches is charged to the Pod's host cgroup, and nothing gives it
+back. That cgroup's limit is the Pod's limits plus the `RuntimeClass`
+`overhead.podFixed`, so `podFixed` must cover `default_memory` plus the shim,
+virtiofsd, Cloud Hypervisor and their kernel memory, which grow with the VM.
+`config/components/katars_runtimeclass` sets 320Mi. With too little, a guest
+that fills its memory makes the host OOM killer stop Cloud Hypervisor, and the
+instance dies, instead of the guest's OOM killer stopping one of its
+processes.
+
+The host-side part is about 20 MiB for a 2 GiB VM and grows by about 4 MiB for
+each GiB of guest memory the VM has touched, mostly page tables. So 320Mi holds
+for a VM of up to about 28 GiB. A Pod whose limits add up to more can still
+outgrow its host cgroup once its guest fills.
+
 ## Running locally
 
 ```bash
