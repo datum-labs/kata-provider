@@ -6,7 +6,7 @@ toolchain go1.27.4
 
 require (
 	github.com/prometheus/client_golang v1.25.0
-	go.datum.net/compute v0.16.5
+	go.datum.net/compute v0.16.6
 	go.datum.net/network-services-operator v0.34.2
 	go.miloapis.com/billing v0.7.4
 	go.opentelemetry.io/otel/exporters/prometheus v0.69.0

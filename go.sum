@@ -143,8 +143,8 @@ github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6Kllzaw
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
-go.datum.net/compute v0.16.5 h1:h688tkyw7TwXnTFAy7K+brAOrRRThtafwqsCYsJbewE=
-go.datum.net/compute v0.16.5/go.mod h1:0Lv8ErD1pQo3kPjDH5kvlmUDcQXFAKyo0ohM+ulFre0=
+go.datum.net/compute v0.16.6 h1:5N5FIFT71Cd886g6jKcXxkLSiYscoOvWNkvJxM/uqkU=
+go.datum.net/compute v0.16.6/go.mod h1:YDpJKVduJM/wMuQ9Fq9aqWFgzFyAN5l/euO3VMSvN/E=
 go.datum.net/network-services-operator v0.34.2 h1:5LY1p9Db+/t4uzSJ08PQMH8DnUd8HqHw51Q31h6kksE=
 go.datum.net/network-services-operator v0.34.2/go.mod h1:mJcEFBgqa6mXz54kYv8EQaVUNR7zUXfIz5X1zbxTdIw=
 go.miloapis.com/billing v0.7.4 h1:CYg0TImOGg+khh6M1pBFSOwkVZDD9FQHeBq+yUK2VJ8=
